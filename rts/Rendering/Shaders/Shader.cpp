@@ -4,6 +4,7 @@
 #include "Rendering/Shaders/ShaderHandler.h"
 #include "Rendering/Shaders/LuaShaderContainer.h"
 #include "Rendering/Shaders/GLSLCopyState.h"
+#include "Rendering/GL/VBO.h"
 #include "Rendering/GL/myGL.h"
 #include "Rendering/GL/VAO.h"
 #include "Rendering/GlobalRendering.h"
@@ -89,12 +90,15 @@ static std::string glslGetLog(GLuint obj)
 static bool ExtractGlslVersion(std::string* src, std::string* version)
 {
 	RECOIL_DETAILED_TRACY_ZONE;
+	if (src->empty())
+		return false;
+
 	const auto pos = src->find("#version ");
 
 	if (pos != std::string::npos) {
-		const auto eol = src->find('\n', pos) + 1;
+		const auto eol = src->find('\n', pos);
 		*version = src->substr(pos, eol - pos);
-		src->erase(pos, eol - pos);
+		src->erase(pos, eol == std::string::npos ? std::string::npos : (eol - pos + 1));
 		return true;
 	}
 	return false;
@@ -128,8 +132,103 @@ static void NormalizeGlslVersionForContext(std::string* version)
 
 	// Apple core-profile contexts reject several GLSL 130 shaders even though the
 	// same source is otherwise compatible with a 150+ core pipeline.
-	if (requestedVersion == 130 && globalRenderingInfo.glslVersionNum >= 150)
+	if (requestedVersion == 130 && globalRenderingInfo.glslVersionNum >= 150) {
 		*version = "#version 150\n";
+		return;
+	}
+
+	if (requestedVersion >= 420 && globalRenderingInfo.glslVersionNum >= 410 && globalRenderingInfo.glslVersionNum < requestedVersion)
+		*version = "#version 410\n";
+}
+
+static bool SupportsLayoutBindingQualifiers()
+{
+	return GLAD_GL_ARB_shading_language_420pack || GLAD_GL_VERSION_4_2;
+}
+
+static void RemoveDirectiveByPrefix(std::string* source, const std::string& directivePrefix)
+{
+	for (size_t pos = source->find(directivePrefix); pos != std::string::npos; pos = source->find(directivePrefix, pos)) {
+		const size_t lineEnd = source->find('\n', pos);
+
+		if (lineEnd == std::string::npos) {
+			source->erase(pos);
+			break;
+		}
+
+		source->erase(pos, lineEnd - pos + 1);
+	}
+}
+
+static std::vector<std::string> SplitLayoutItems(const std::string& layoutBody)
+{
+	std::vector<std::string> items;
+	size_t itemStart = 0;
+
+	while (itemStart <= layoutBody.size()) {
+		const size_t itemEnd = layoutBody.find(',', itemStart);
+
+		if (itemEnd == std::string::npos) {
+			items.emplace_back(layoutBody.substr(itemStart));
+			break;
+		}
+
+		items.emplace_back(layoutBody.substr(itemStart, itemEnd - itemStart));
+		itemStart = itemEnd + 1;
+	}
+
+	return items;
+}
+
+static void StripLayoutBindingQualifiers(std::string* source)
+{
+	for (size_t layoutPos = source->find("layout("); layoutPos != std::string::npos; layoutPos = source->find("layout(", layoutPos + 1)) {
+		const size_t bodyStart = layoutPos + strlen("layout(");
+		const size_t bodyEnd = source->find(')', bodyStart);
+
+		if (bodyEnd == std::string::npos)
+			break;
+
+		std::string layoutBody = source->substr(bodyStart, bodyEnd - bodyStart);
+		std::vector<std::string> layoutItems = SplitLayoutItems(layoutBody);
+		std::vector<std::string> filteredItems;
+		filteredItems.reserve(layoutItems.size());
+
+		for (std::string item: layoutItems) {
+			StringTrimInPlace(item);
+			if (item.empty())
+				continue;
+			if (item.rfind("binding", 0) == 0)
+				continue;
+
+			filteredItems.emplace_back(std::move(item));
+		}
+
+		std::string replacement;
+		if (!filteredItems.empty()) {
+			replacement = "layout(";
+			for (size_t i = 0; i < filteredItems.size(); ++i) {
+				if (i > 0)
+					replacement += ", ";
+				replacement += filteredItems[i];
+			}
+			replacement += ")";
+		}
+
+		source->replace(layoutPos, bodyEnd - layoutPos + 1, replacement);
+		layoutPos += replacement.size();
+	}
+}
+
+static void NormalizeShaderSourceForContext(std::string* source)
+{
+	if (source->empty())
+		return;
+
+	if (!SupportsLayoutBindingQualifiers()) {
+		RemoveDirectiveByPrefix(source, "#extension GL_ARB_shading_language_420pack");
+		StripLayoutBindingQualifiers(source);
+	}
 }
 
 /*****************************************************************/
@@ -215,8 +314,11 @@ namespace Shader {
 
 		// extract #version pragma and put it on the first line (only allowed there)
 		// version pragma in definitions overrides version pragma in source (if any)
-		ExtractGlslVersion(&sourceStr, &versionStr);
-		ExtractGlslVersion(&defFlags,  &versionStr);
+		while (ExtractGlslVersion(&sourceStr, &versionStr)) {}
+		while (ExtractGlslVersion(&defFlags,  &versionStr)) {}
+
+		NormalizeShaderSourceForContext(&sourceStr);
+		NormalizeShaderSourceForContext(&defFlags);
 		NormalizeGlslVersionForContext(&versionStr);
 
 		if (!versionStr.empty()) EnsureEndsWith(&versionStr, "\n");

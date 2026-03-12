@@ -289,8 +289,11 @@ void CProjectileDrawer::Init() {
 	LoadWeaponTextures();
 
 	fxShadowShader = shaderHandler->CreateProgramObject("[ProjectileDrawer::VFS]", "FX Shader shadow");
-	fxShadowShader->AttachShaderObject(shaderHandler->CreateShaderObject("GLSL/ProjFXVertShadowProg.glsl", "", GL_VERTEX_SHADER));
-	fxShadowShader->AttachShaderObject(shaderHandler->CreateShaderObject("GLSL/ProjFXFragShadowProg.glsl", "", GL_FRAGMENT_SHADER));
+	const bool useAppleCoreProfileAdapter = globalRenderingInfo.glContextIsCore && globalRenderingInfo.glslVersionNum >= 150;
+	const std::string extraDefs = useAppleCoreProfileAdapter ? std::string("#version 150\n#define RECOIL_CORE_PROFILE_PROJFX 1\n") : std::string();
+
+	fxShadowShader->AttachShaderObject(shaderHandler->CreateShaderObject("GLSL/ProjFXVertShadowProg.glsl", extraDefs, GL_VERTEX_SHADER));
+	fxShadowShader->AttachShaderObject(shaderHandler->CreateShaderObject("GLSL/ProjFXFragShadowProg.glsl", extraDefs, GL_FRAGMENT_SHADER));
 	fxShadowShader->SetFlag("USE_TEXTURE_ARRAY", false);
 
 	using VAT = std::decay_t<decltype(CProjectile::GetPrimaryRenderBuffer())>::VertType;
@@ -302,14 +305,16 @@ void CProjectileDrawer::Init() {
 	fxShadowShader->SetUniform("atlasTex", 0);
 	fxShadowShader->SetUniform("alphaCtrl", 0.0f, 1.0f, 0.0f, 0.0f);
 	fxShadowShader->SetUniform("shadowColorMode", shadowHandler.shadowColorMode > 0 ? 1.0f : 0.0f);
+	fxShadowShader->SetUniformMatrix4x4("recoilShadowViewMatrix", false, CMatrix44f::Identity().m);
+	fxShadowShader->SetUniformMatrix4x4("recoilShadowProjectionMatrix", false, CMatrix44f::Identity().m);
 
 	fxShadowShader->Disable();
 	fxShadowShader->Validate();
 
 
 	fxShader = shaderHandler->CreateProgramObject("[ProjectileDrawer::VFS]", "FX Shader");
-	fxShader->AttachShaderObject(shaderHandler->CreateShaderObject("GLSL/ProjFXVertProg.glsl", "", GL_VERTEX_SHADER));
-	fxShader->AttachShaderObject(shaderHandler->CreateShaderObject("GLSL/ProjFXFragProg.glsl", "", GL_FRAGMENT_SHADER));
+	fxShader->AttachShaderObject(shaderHandler->CreateShaderObject("GLSL/ProjFXVertProg.glsl", extraDefs, GL_VERTEX_SHADER));
+	fxShader->AttachShaderObject(shaderHandler->CreateShaderObject("GLSL/ProjFXFragProg.glsl", extraDefs, GL_FRAGMENT_SHADER));
 	fxShader->SetFlag("SMOOTH_PARTICLES", CheckSoftenExt());
 	fxShader->SetFlag("DEPTH_CLIP01", globalRendering->supportClipSpaceControl);
 	fxShader->SetFlag("USE_TEXTURE_ARRAY", false);
@@ -327,6 +332,8 @@ void CProjectileDrawer::Init() {
 	fxShader->SetUniform("camPos", 0.0f, 0.0f, 0.0f);
 	fxShader->SetUniform("fogColor", 0.0f, 0.0f, 0.0f);
 	fxShader->SetUniform("fogParams", 0.0f, 0.0f);
+	fxShader->SetUniformMatrix4x4("recoilViewMatrix", false, CMatrix44f::Identity().m);
+	fxShader->SetUniformMatrix4x4("recoilProjectionMatrix", false, CMatrix44f::Identity().m);
 
 	fxShader->Disable();
 
@@ -818,6 +825,8 @@ void CProjectileDrawer::DrawAlpha(bool drawAboveWater, bool drawBelowWater, bool
 		fxShader->SetUniform("camPos", camPlayer->pos.x, camPlayer->pos.y, camPlayer->pos.z);
 		fxShader->SetUniform("fogColor", sky->fogColor.x, sky->fogColor.y, sky->fogColor.z);
 		fxShader->SetUniform("fogParams", sky->fogStart * camPlayer->GetFarPlaneDist(), sky->fogEnd * camPlayer->GetFarPlaneDist());
+		fxShader->SetUniformMatrix4x4("recoilViewMatrix", false, camera->GetViewMatrix().m);
+		fxShader->SetUniformMatrix4x4("recoilProjectionMatrix", false, camera->GetProjectionMatrix().m);
 
 		rb.DrawElements(GL_TRIANGLES);
 
@@ -915,6 +924,8 @@ void CProjectileDrawer::DrawShadowTransparent()
 	fxShadowShader->Enable();
 	fxShadowShader->SetFlag("USE_TEXTURE_ARRAY", (textureAtlas->GetNumPages() > 1));
 	fxShadowShader->SetUniform("shadowColorMode", shadowHandler.shadowColorMode > 0 ? 1.0f : 0.0f);
+	fxShadowShader->SetUniformMatrix4x4("recoilShadowViewMatrix", false, shadowHandler.GetShadowViewMatrix().m);
+	fxShadowShader->SetUniformMatrix4x4("recoilShadowProjectionMatrix", false, shadowHandler.GetShadowProjMatrix().m);
 
 	rb.DrawElements(GL_TRIANGLES);
 
@@ -1236,4 +1247,3 @@ void CProjectileDrawer::RenderProjectileDestroyed(const CProjectile* p)
 	if (p->model != nullptr)
 		modelRenderers[MDL_TYPE(p)].DelObject(p);
 }
-

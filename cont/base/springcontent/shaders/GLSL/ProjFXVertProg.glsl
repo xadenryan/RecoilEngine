@@ -1,6 +1,11 @@
 #version 130
 //#extension GL_ARB_explicit_attrib_location : require
 
+#if defined(RECOIL_CORE_PROFILE_PROJFX)
+uniform mat4 recoilViewMatrix;
+uniform mat4 recoilProjectionMatrix;
+#endif
+
 in vec3 pos;
 in vec3 uvw;
 in vec4 uvInfo;
@@ -59,7 +64,12 @@ void main() {
 	gl_ClipDistance[0] = dot(vec4(pos, 1.0), clipPlane); //water clip plane
 
 	// viewport relative UV [0.0, 1.0]
-	vsPos = gl_ModelViewMatrix * vec4(pos, 1.0);
-	gl_Position = gl_ProjectionMatrix * vsPos;
+	#if defined(RECOIL_CORE_PROFILE_PROJFX)
+		vsPos = recoilViewMatrix * vec4(pos, 1.0);
+		gl_Position = recoilProjectionMatrix * vsPos;
+	#else
+		vsPos = gl_ModelViewMatrix * vec4(pos, 1.0);
+		gl_Position = gl_ProjectionMatrix * vsPos;
+	#endif
 	screenUV = SNORM2NORM(gl_Position.xy / gl_Position.w);
 }

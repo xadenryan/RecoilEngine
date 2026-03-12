@@ -1,6 +1,11 @@
 #version 130
 //#extension GL_ARB_explicit_attrib_location : require
 
+#if defined(RECOIL_CORE_PROFILE_PROJFX)
+uniform mat4 recoilShadowViewMatrix;
+uniform mat4 recoilShadowProjectionMatrix;
+#endif
+
 in vec3 pos;
 in vec3 uvw;
 in vec4 uvInfo;
@@ -40,7 +45,15 @@ void main() {
 	vLayer = uvw.z;
 	vCol = color;
 
-	vec4 lightVertexPos = gl_ModelViewMatrix * vec4(pos, 1.0);
+	#if defined(RECOIL_CORE_PROFILE_PROJFX)
+		vec4 lightVertexPos = recoilShadowViewMatrix * vec4(pos, 1.0);
+	#else
+		vec4 lightVertexPos = gl_ModelViewMatrix * vec4(pos, 1.0);
+	#endif
 	lightVertexPos.xy += vec2(0.5);
-	gl_Position = gl_ProjectionMatrix * lightVertexPos;
+	#if defined(RECOIL_CORE_PROFILE_PROJFX)
+		gl_Position = recoilShadowProjectionMatrix * lightVertexPos;
+	#else
+		gl_Position = gl_ProjectionMatrix * lightVertexPos;
+	#endif
 }

@@ -22,7 +22,12 @@ noperspective in vec2 screenUV;
 
 out vec4 fragColor;
 
-#define projMatrix gl_ProjectionMatrix
+#if defined(RECOIL_CORE_PROFILE_PROJFX)
+uniform mat4 recoilProjectionMatrix;
+	#define projMatrix recoilProjectionMatrix
+#else
+	#define projMatrix gl_ProjectionMatrix
+#endif
 
 #define NORM2SNORM(value) (value * 2.0 - 1.0)
 #define SNORM2NORM(value) (value * 0.5 + 0.5)
