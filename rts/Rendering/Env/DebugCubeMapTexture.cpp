@@ -4,6 +4,7 @@
 #include "Rendering/Textures/Bitmap.h"
 #include "Rendering/Shaders/Shader.h"
 #include "Rendering/Shaders/ShaderHandler.h"
+#include "Rendering/GlobalRenderingInfo.h"
 #include "System/Log/ILog.h"
 #include "Game/Camera.h"
 
@@ -58,15 +59,18 @@ DebugCubeMapTexture::DebugCubeMapTexture()
 	glBindTexture(GL_TEXTURE_CUBE_MAP, 0);
 	glDisable(GL_TEXTURE_CUBE_MAP);
 
+	const std::string shaderDefs = globalRenderingInfo.glContextIsCore ? "#define RECOIL_CORE_GL 1\n" : "";
 	shader = shaderHandler->CreateProgramObject("[DebugCubeMap]", "DebugCubeMap");
-	shader->AttachShaderObject(shaderHandler->CreateShaderObject("GLSL/CubeMapVS.glsl", "", GL_VERTEX_SHADER));
+	shader->AttachShaderObject(shaderHandler->CreateShaderObject("GLSL/CubeMapVS.glsl", shaderDefs, GL_VERTEX_SHADER));
 	shader->AttachShaderObject(shaderHandler->CreateShaderObject("GLSL/CubeMapFS.glsl", "", GL_FRAGMENT_SHADER));
 	shader->Link();
 	shader->Enable();
 	shader->SetUniform("uvFlip", 1.0f, -1.0f, 1.0f);
 	shader->SetUniform("skybox", 0);
 	shader->Disable();
+	vao.Bind();
 	shader->Validate();
+	vao.Unbind();
 #endif
 }
 
@@ -112,6 +116,10 @@ void DebugCubeMapTexture::Draw(uint32_t face) const
 	vao.Bind();
 	assert(shader->IsValid());
 	shader->Enable();
+	if (globalRenderingInfo.glContextIsCore) {
+		const CMatrix44f transformMatrix = camera->GetProjectionMatrix() * view;
+		shader->SetUniformMatrix4x4("transformMatrix", false, transformMatrix.m);
+	}
 
 	glDrawArrays(GL_TRIANGLES, baseVertex, vertCount);
 

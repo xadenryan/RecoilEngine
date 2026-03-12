@@ -5,6 +5,7 @@
 
 #include "SkyBox.h"
 #include "Rendering/GlobalRendering.h"
+#include "Rendering/GlobalRenderingInfo.h"
 #include "Rendering/GL/myGL.h"
 #include "Rendering/GL/FBO.h"
 #include "Rendering/Shaders/Shader.h"
@@ -34,6 +35,14 @@ LOG_REGISTER_SECTION_GLOBAL(LOG_SECTION_SKY_BOX)
 	#undef LOG_SECTION_CURRENT
 #endif
 #define LOG_SECTION_CURRENT LOG_SECTION_SKY_BOX
+
+static const std::string GetCubeMapShaderDefs()
+{
+	if (globalRenderingInfo.glContextIsCore)
+		return "#define RECOIL_CORE_GL 1\n";
+
+	return "";
+}
 
 void CSkyBox::Init(uint32_t textureID, uint32_t xsize, uint32_t ysize, bool convertToCM)
 {
@@ -77,8 +86,9 @@ void CSkyBox::Init(uint32_t textureID, uint32_t xsize, uint32_t ysize, bool conv
 
 		fbo.Bind();
 
+		const std::string shaderDefs = GetCubeMapShaderDefs();
 		auto* ercShader = shaderHandler->CreateProgramObject("[SkyBox]", "EquiRectConverter");
-		ercShader->AttachShaderObject(shaderHandler->CreateShaderObject("GLSL/CubeMapVS.glsl", "", GL_VERTEX_SHADER));
+		ercShader->AttachShaderObject(shaderHandler->CreateShaderObject("GLSL/CubeMapVS.glsl", shaderDefs, GL_VERTEX_SHADER));
 		ercShader->AttachShaderObject(shaderHandler->CreateShaderObject("GLSL/EquiRectConverterFS.glsl", "", GL_FRAGMENT_SHADER));
 		ercShader->Link();
 		ercShader->Enable();
@@ -86,7 +96,12 @@ void CSkyBox::Init(uint32_t textureID, uint32_t xsize, uint32_t ysize, bool conv
 		ercShader->SetUniform("uvFlip", 1.0f, 1.0f, 1.0f);
 		ercShader->Disable();
 
-		if (!ercShader->Validate()) {
+		VAO validateVAO;
+		validateVAO.Bind();
+		const bool ercValid = ercShader->Validate();
+		validateVAO.Unbind();
+
+		if (!ercValid) {
 			fbo.DetachAll();
 			FBO::Unbind();
 			cubeTexID = nullptr;
@@ -134,6 +149,8 @@ void CSkyBox::Init(uint32_t textureID, uint32_t xsize, uint32_t ysize, bool conv
 					viewMatParams[side].second
 				);
 				glLoadMatrixf(viewMat);
+				if (globalRenderingInfo.glContextIsCore)
+					ercShader->SetUniformMatrix4x4("transformMatrix", false, viewMat.m);
 
 				glDrawBuffer(GL_COLOR_ATTACHMENT0);
 
@@ -186,8 +203,9 @@ void CSkyBox::Init(uint32_t textureID, uint32_t xsize, uint32_t ysize, bool conv
 	glBindTexture(GL_TEXTURE_CUBE_MAP, 0);
 	glDisable(GL_TEXTURE_CUBE_MAP);
 
+	const std::string shaderDefs = GetCubeMapShaderDefs();
 	shader = shaderHandler->CreateProgramObject("[SkyBox]", "SkyBox");
-	shader->AttachShaderObject(shaderHandler->CreateShaderObject("GLSL/CubeMapVS.glsl", "", GL_VERTEX_SHADER));
+	shader->AttachShaderObject(shaderHandler->CreateShaderObject("GLSL/CubeMapVS.glsl", shaderDefs, GL_VERTEX_SHADER));
 	shader->AttachShaderObject(shaderHandler->CreateShaderObject("GLSL/CubeMapFS.glsl", "", GL_FRAGMENT_SHADER));
 	shader->Link();
 	shader->Enable();
@@ -195,7 +213,9 @@ void CSkyBox::Init(uint32_t textureID, uint32_t xsize, uint32_t ysize, bool conv
 	shader->SetUniform("skybox", 0);
 	shader->Disable();
 
+	skyVAO.Bind();
 	valid &= shader->Validate();
+	skyVAO.Unbind();
 #else
 	valid = true;
 #endif
@@ -263,6 +283,10 @@ void CSkyBox::Draw()
 		waterRendering->planeColor.z,
 		static_cast<float>(waterRendering->hasWaterPlane && !globalRendering->drawDebugCubeMap)
 	);
+	if (globalRenderingInfo.glContextIsCore) {
+		const CMatrix44f transformMatrix = camera->GetProjectionMatrix() * (view * model);
+		shader->SetUniformMatrix4x4("transformMatrix", false, transformMatrix.m);
+	}
 
 	glDrawArrays(GL_TRIANGLES, 0, 36);
 

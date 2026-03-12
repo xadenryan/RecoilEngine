@@ -2,6 +2,7 @@
 
 #include "glFont.h"
 #include "Rendering/GlobalRendering.h"
+#include "Rendering/GlobalRenderingInfo.h"
 #include "Rendering/Shaders/Shader.h"
 #include "System/Log/ILog.h"
 #include "System/SafeUtil.h"
@@ -28,6 +29,28 @@ void main() {
 	vCol = col;
 	vUV  = uv;
 	gl_Position = gl_ModelViewProjectionMatrix * vec4(pos, 1.0); // TODO: move to UBO
+}
+)";
+
+static constexpr const char* vsFontCore150 = R"(
+#version 150
+#extension GL_ARB_explicit_attrib_location : enable
+
+layout (location = 0) in vec3 pos;
+layout (location = 1) in vec2 uv;
+layout (location = 2) in vec4 col;
+
+uniform mat4 transformMatrix = mat4(1.0);
+
+out Data {
+	vec4 vCol;
+	vec2 vUV;
+};
+
+void main() {
+	vCol = col;
+	vUV  = uv;
+	gl_Position = transformMatrix * vec4(pos, 1.0);
 }
 )";
 
@@ -141,7 +164,13 @@ CglShaderFontRenderer::CglShaderFontRenderer()
 	fontShaderColor = std::make_unique<Shader::GLSLProgramObject>("[GL-Font]");
 
 	LOG("[CglFont::%s] Creating Font shaders: GLAD_GL_ARB_explicit_attrib_location = %s", __func__, globalRendering->supportExplicitAttribLoc ? "true" : "false");
-	if (globalRendering->supportExplicitAttribLoc) {
+	if (globalRenderingInfo.glContextIsCore && globalRendering->supportExplicitAttribLoc) {
+		fontShader->AttachShaderObject(new Shader::GLSLShaderObject(GL_VERTEX_SHADER  , vsFontCore150));
+		fontShader->AttachShaderObject(new Shader::GLSLShaderObject(GL_FRAGMENT_SHADER, fsFont330));
+		fontShaderColor->AttachShaderObject(new Shader::GLSLShaderObject(GL_VERTEX_SHADER  , vsFontCore150));
+		fontShaderColor->AttachShaderObject(new Shader::GLSLShaderObject(GL_FRAGMENT_SHADER, fsFontColor330));
+	}
+	else if (globalRendering->supportExplicitAttribLoc) {
 		fontShader->AttachShaderObject(new Shader::GLSLShaderObject(GL_VERTEX_SHADER  , vsFont330));
 		fontShader->AttachShaderObject(new Shader::GLSLShaderObject(GL_FRAGMENT_SHADER, fsFont330));
 		fontShaderColor->AttachShaderObject(new Shader::GLSLShaderObject(GL_VERTEX_SHADER  , vsFont330));
@@ -164,14 +193,24 @@ CglShaderFontRenderer::CglShaderFontRenderer()
 	fontShader->Enable();
 	fontShader->SetUniform("tex", 0);
 	fontShader->Disable();
-	fontShader->Validate();
+	{
+		VAO vao;
+		vao.Bind();
+		fontShader->Validate();
+		vao.Unbind();
+	}
 	assert(fontShader->IsValid());
 
 	fontShaderColor->Link();
 	fontShaderColor->Enable();
 	fontShaderColor->SetUniform("tex", 0);
 	fontShaderColor->Disable();
-	fontShaderColor->Validate();
+	{
+		VAO vao;
+		vao.Bind();
+		fontShaderColor->Validate();
+		vao.Unbind();
+	}
 	assert(fontShaderColor->IsValid());
 }
 
@@ -232,11 +271,18 @@ void CglShaderFontRenderer::PushGLState(const CglFont& fnt)
 
 	glGetIntegerv(GL_CURRENT_PROGRAM, &currProgID);
 
+	const CMatrix44f transformMatrix = fnt.GetProjMatrix() * fnt.GetViewMatrix();
+
 	if (fnt.HasColor()) {
 		fontShaderColor->Enable();
+		if (globalRenderingInfo.glContextIsCore)
+			fontShaderColor->SetUniformMatrix4x4("transformMatrix", false, transformMatrix.m);
 	}
-	else
+	else {
 		fontShader->Enable();
+		if (globalRenderingInfo.glContextIsCore)
+			fontShader->SetUniformMatrix4x4("transformMatrix", false, transformMatrix.m);
+	}
 }
 
 void CglShaderFontRenderer::PopGLState(const CglFont& fnt)
