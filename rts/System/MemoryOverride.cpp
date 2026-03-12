@@ -10,6 +10,8 @@
 #include <cstdint>
 #ifdef _WIN32
 #include <malloc.h>
+#elif defined(__APPLE__)
+#include <malloc/malloc.h>
 #else
 #include <malloc.h>  // for malloc_usable_size on Linux
 #endif
@@ -120,15 +122,17 @@ void aligned_free(void* ptr)
 
 size_t usable_size(void* ptr)
 {
-#ifdef USE_MIMALLOC
-	return mi_usable_size(ptr);
-#else
-	#if defined(_WIN32) || defined(__MINGW32__)
-		return _msize(ptr);
+	#ifdef USE_MIMALLOC
+		return mi_usable_size(ptr);
 	#else
-		return malloc_usable_size(ptr);
+		#if defined(_WIN32) || defined(__MINGW32__)
+			return _msize(ptr);
+		#elif defined(__APPLE__)
+			return malloc_size(ptr);
+		#else
+			return malloc_usable_size(ptr);
+		#endif
 	#endif
-#endif
 }
 
 } // namespace recoil

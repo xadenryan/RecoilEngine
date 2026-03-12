@@ -3,6 +3,7 @@
 #include "System/Matrix44f.h"
 #include "System/Quaternion.h"
 #include "System/SpringMath.h"
+#include "System/simd_compat.h"
 #ifndef UNIT_TEST
 	#include "Rendering/GlobalRendering.h"
 #endif
@@ -10,9 +11,6 @@
 #include <memory.h>
 #include <algorithm>
 #include <cstring>
-
-#include <xmmintrin.h>
-#include <emmintrin.h>
 
 CR_BIND(CMatrix44f, )
 
@@ -330,6 +328,7 @@ CMatrix44f& CMatrix44f::Translate(const float x, const float y, const float z)
 
 
 __FORCE_ALIGN_STACK__
+#if SPRING_HAVE_SSE_INTRINSICS
 static inline void MatrixMatrixMultiplySSE(const CMatrix44f& m1, const CMatrix44f& m2, CMatrix44f* mout)
 {
 	//alignof guarantees 16 byte alignment required by SSE2
@@ -386,6 +385,20 @@ static inline void MatrixMatrixMultiplySSE(const CMatrix44f& m1, const CMatrix44
 	_mm_store_ps(&mout->md[2][0], moutc3);
 	_mm_store_ps(&mout->md[3][0], moutc4);
 }
+#endif
+
+static inline void MatrixMatrixMultiplyScalar(const CMatrix44f& m1, const CMatrix44f& m2, CMatrix44f* mout)
+{
+	for (int col = 0; col < 4; ++col) {
+		for (int row = 0; row < 4; ++row) {
+			mout->md[col][row] =
+				(m1.md[0][row] * m2.md[col][0]) +
+				(m1.md[1][row] * m2.md[col][1]) +
+				(m1.md[2][row] * m2.md[col][2]) +
+				(m1.md[3][row] * m2.md[col][3]);
+		}
+	}
+}
 
 bool CMatrix44f::equals(const CMatrix44f& rhs) const
 {
@@ -401,6 +414,7 @@ bool CMatrix44f::operator==(const CMatrix44f& rhs) const
 	if (this == &rhs)
 		return true;
 
+#if SPRING_HAVE_SSE_INTRINSICS
 	static constexpr int BINEQ = 0xF;
 
 	for (size_t i = 0; i < 4; ++i) {
@@ -412,33 +426,48 @@ bool CMatrix44f::operator==(const CMatrix44f& rhs) const
 			return false;
 	}
 	return true;
+#else
+	return std::equal(m, m + 16, rhs.m);
+#endif
 }
 
 CMatrix44f CMatrix44f::operator* (const CMatrix44f& m2) const
 {
 	CMatrix44f mout;
+#if SPRING_HAVE_SSE_INTRINSICS
 	MatrixMatrixMultiplySSE(*this, m2, &mout);
+#else
+	MatrixMatrixMultiplyScalar(*this, m2, &mout);
+#endif
 	return mout;
 }
 
 
 CMatrix44f& CMatrix44f::operator>>= (const CMatrix44f& m2)
 {
+#if SPRING_HAVE_SSE_INTRINSICS
 	MatrixMatrixMultiplySSE(m2, *this, this);
+#else
+	MatrixMatrixMultiplyScalar(m2, *this, this);
+#endif
 	return (*this);
 }
 
 
 CMatrix44f& CMatrix44f::operator<<= (const CMatrix44f& m2)
 {
+#if SPRING_HAVE_SSE_INTRINSICS
 	MatrixMatrixMultiplySSE(*this, m2, this);
+#else
+	MatrixMatrixMultiplyScalar(*this, m2, this);
+#endif
 	return (*this);
 }
 
 CMatrix44f CMatrix44f::operator+(const CMatrix44f& mat) const
 {
 	CMatrix44f r;
-#if 0
+#if !SPRING_HAVE_SSE_INTRINSICS
 	for (size_t i = 0; i < 16; i += 4) {
 		r[i + 0] = m[i + 0] + mat[i + 0];
 		r[i + 1] = m[i + 1] + mat[i + 1];
@@ -463,14 +492,14 @@ CMatrix44f CMatrix44f::operator+(const CMatrix44f& mat) const
 __FORCE_ALIGN_STACK__
 float4 CMatrix44f::operator* (const float4 v) const
 {
-	#if 0
+#if !SPRING_HAVE_SSE_INTRINSICS
 	float4 out;
 	out.x = m[0] * v.x + m[4] * v.y + m[8 ] * v.z + m[12] * v.w;
 	out.y = m[1] * v.x + m[5] * v.y + m[9 ] * v.z + m[13] * v.w;
 	out.z = m[2] * v.x + m[6] * v.y + m[10] * v.z + m[14] * v.w;
 	out.w = m[3] * v.x + m[7] * v.y + m[11] * v.z + m[15] * v.w;
 	return out;
-	#else
+#else
 	__m128 out;
 	out =                 _mm_mul_ps(_mm_load_ps(&md[0][0]), _mm_set1_ps(v.x)) ; // or _mm_load1_ps(&v.x)
 	out = _mm_add_ps(out, _mm_mul_ps(_mm_load_ps(&md[1][0]), _mm_set1_ps(v.y))); // or _mm_load1_ps(&v.y)
@@ -872,4 +901,3 @@ CMatrix44f CMatrix44f::LookAtView(const float3& eye, const float3& center, const
 
 	return viewMatrix;
 }
-

@@ -3,14 +3,12 @@
 #ifndef FASTMATH_H
 #define FASTMATH_H
 
-#ifndef DEDICATED_NOSSE
-#include <xmmintrin.h>
-#endif
 #include <cinttypes>
 
 #include "lib/streflop/streflop_cond.h"
 #include "System/MainDefines.h"
 #include "System/MathConstants.h"
+#include "System/simd_compat.h"
 
 #ifdef _MSC_VER
 #define __builtin_sqrtf sqrt_sse
@@ -49,12 +47,12 @@ namespace fastmath {
 	__FORCE_ALIGN_STACK__
 	inline float isqrt_sse(float x)
 	{
-#ifndef DEDICATED_NOSSE
-		__m128 vec = _mm_set_ss(x);
-		vec = _mm_rsqrt_ss(vec);
-		return _mm_cvtss_f32(vec);
+#if SPRING_HAVE_SSE_INTRINSICS && !defined(DEDICATED_NOSSE)
+			__m128 vec = _mm_set_ss(x);
+			vec = _mm_rsqrt_ss(vec);
+			return _mm_cvtss_f32(vec);
 #else
-		return fastmath::isqrt_nosse(x);
+			return fastmath::isqrt_nosse(x);
 #endif
 	}
 
@@ -66,12 +64,12 @@ namespace fastmath {
 	__FORCE_ALIGN_STACK__
 	inline float sqrt_sse(float x)
 	{
-#ifndef DEDICATED_NOSSE
-		__m128 vec = _mm_set_ss(x);
-		vec = _mm_sqrt_ss(vec);
-		return _mm_cvtss_f32(vec);
+#if SPRING_HAVE_SSE_INTRINSICS && !defined(DEDICATED_NOSSE)
+			__m128 vec = _mm_set_ss(x);
+			vec = _mm_sqrt_ss(vec);
+			return _mm_cvtss_f32(vec);
 #else
-	#if STREFLOP_ENABLED
+		#if STREFLOP_ENABLED
 		return streflop::sqrt(x);
 	#else
 		// not in synced context, pick either fm or std

@@ -20,10 +20,12 @@ macro    (create_engine_build_and_install_target targetName)
 	set(myBuildTarget spring-${targetName})
 	set(${targetName}-Deps
 			engine-${targetName}
-			basecontent
 			unitsync
 			${DEPS_AI_ALL}
 		)
+	if (RECOIL_BUILD_BASECONTENT)
+		list(APPEND ${targetName}-Deps basecontent)
+	endif()
 	if (CREATE_MAN_PAGES)
 		list(APPEND ${targetName}-Deps manpages)
 	endif()
@@ -32,15 +34,18 @@ macro    (create_engine_build_and_install_target targetName)
 	endif()
 
 	# Create a custom meta build target
-	add_custom_target(${myBuildTarget}
+		add_custom_target(${myBuildTarget}
 		WORKING_DIRECTORY
 			"${CMAKE_BINARY_DIR}"
 		COMMENT
 			"  ${myBuildTarget}: Building all dependencies ..." VERBATIM
 		)
-	# This also works for custom targets
-	add_dependencies(${myBuildTarget} ${${targetName}-Deps})
-	add_dependencies(engine-${targetName} generateVersionFiles basecontent)
+		# This also works for custom targets
+		add_dependencies(${myBuildTarget} ${${targetName}-Deps})
+		add_dependencies(engine-${targetName} generateVersionFiles)
+		if (RECOIL_BUILD_BASECONTENT)
+			add_dependencies(engine-${targetName} basecontent)
+		endif()
 
 	# Only install spring-<targetName> executable & dependencies
 	set(${targetName}-InstallDirs

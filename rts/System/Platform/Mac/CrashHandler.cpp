@@ -18,6 +18,12 @@
 #error "ADDR2LINE undefined"
 #endif
 
+#if defined(__aarch64__) || defined(__arm64__)
+	static constexpr const char* springAtosArch = "arm64";
+#else
+	static constexpr const char* springAtosArch = "x86_64";
+#endif
+
 
 static bool HaveAddr2LineMac()
 {
@@ -116,7 +122,7 @@ static void TranslateStackTrace(StackTrace& stacktrace, const int logLevel)
 		execCommandString.clear();
 		stackFrameIndices.clear();
 
-		execCommandBuffer << ADDR2LINE << " -o " << modulePath << " -arch x86_64 -l " << std::hex << addrPathPair.first;
+			execCommandBuffer << ADDR2LINE << " -o " << modulePath << " -arch " << springAtosArch << " -l " << std::hex << addrPathPair.first;
 
 		// insert requested addresses that should be translated by atos
 		int i = 0;

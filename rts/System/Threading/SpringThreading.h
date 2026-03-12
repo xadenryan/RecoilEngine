@@ -9,7 +9,8 @@
 #include <atomic>
 #include <thread>
 #include <condition_variable>
-#include <immintrin.h>
+
+#include "System/simd_compat.h"
 
 
 #if   defined(_WIN32)
@@ -113,15 +114,21 @@ namespace spring {
 			// changed implementation from a test-and-set (TAS) to test and test-and-set (TTAS)
 			// this reduces cache coherency traffic on the processor
 			for(;;){
-				if (!state.exchange(true, std::memory_order_acquire)) {
-					break;
-				}
-				while (state.load(std::memory_order_relaxed)) {
-					// add a pause to allow yielding to an SMT/HT thread on the same core
-					_mm_pause();
+					if (!state.exchange(true, std::memory_order_acquire)) {
+						break;
+					}
+					while (state.load(std::memory_order_relaxed)) {
+						// add a pause to allow yielding to an SMT/HT thread on the same core
+						#if (SPRING_HAVE_SSE_INTRINSICS == 1)
+							_mm_pause();
+						#elif defined(__aarch64__) || defined(__arm64__)
+							asm volatile("yield" ::: "memory");
+						#else
+							std::this_thread::yield();
+						#endif
+					}
 				}
 			}
-		}
 		bool try_lock() noexcept {
 			// First do a relaxed load to check if lock is free in order to prevent
 			// unnecessary cache misses if someone does while(!try_lock())

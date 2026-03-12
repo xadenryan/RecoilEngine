@@ -261,6 +261,24 @@ endif (NO_CREG)
 
 option(NO_SOUND "No sound output support" FALSE)
 
+# Some dependencies need to be resolved before rts/builds is processed, so mirror
+# the per-target toggles here and let rts/builds reuse the configured cache values.
+option(BUILD_spring-legacy "Configure the spring-legacy target." TRUE)
+option(BUILD_spring-dedicated "Configure the spring-dedicated target." TRUE)
+option(BUILD_spring-headless "Configure the spring-headless target." TRUE)
+
+set(RECOIL_BUILD_GRAPHICAL_TARGETS FALSE)
+if (BUILD_spring-legacy OR BUILD_spring-headless)
+	set(RECOIL_BUILD_GRAPHICAL_TARGETS TRUE)
+endif()
+set(RECOIL_BUILD_GRAPHICAL_TARGETS "${RECOIL_BUILD_GRAPHICAL_TARGETS}" CACHE INTERNAL "Whether any graphical engine target is enabled")
+
+set(RECOIL_BUILD_BASECONTENT TRUE)
+if (BUILD_spring-dedicated AND NOT BUILD_spring-legacy AND NOT BUILD_spring-headless)
+	set(RECOIL_BUILD_BASECONTENT FALSE)
+endif()
+set(RECOIL_BUILD_BASECONTENT "${RECOIL_BUILD_BASECONTENT}" CACHE INTERNAL "Whether engine content archives should be generated")
+
 if    (WIN32)
 	## internal AVI recorder (w/o sound atm)
 	option(NO_AVI "Disable in-game video recording" FALSE)
@@ -305,7 +323,9 @@ endif (RECOIL_DETAILED_TRACY_ZONING)
 #  So req. checks are done in the build target's CMakeLists.txt.
 find_package(SDL2 MODULE)
 
-find_package_static(DevIL 1.8.0 REQUIRED)
+if (RECOIL_BUILD_GRAPHICAL_TARGETS)
+	find_package_static(DevIL 1.8.0 REQUIRED)
+endif()
 
 if    (WIN32)
 	find_package(Windres REQUIRED)
@@ -427,7 +447,17 @@ endif()
 ### streflop
 option(ENABLE_STREFLOP "build Spring with streflop support (REQUIRED FOR MULTIPLAYER)" TRUE)
 
-if (ENABLE_STREFLOP)
+set(RECOIL_BUILD_STREFLOP "${ENABLE_STREFLOP}")
+if (APPLE AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm64|aarch64)$" AND BUILD_spring-dedicated AND NOT BUILD_spring-legacy AND NOT BUILD_spring-headless)
+	set(RECOIL_BUILD_STREFLOP FALSE)
+endif()
+set(RECOIL_BUILD_STREFLOP "${RECOIL_BUILD_STREFLOP}" CACHE INTERNAL "Whether streflop is available for the configured build graph")
+
+if (ENABLE_STREFLOP AND NOT RECOIL_BUILD_STREFLOP)
+	message(WARNING "Disabling streflop for native Apple Silicon dedicated-only builds during the phase-1 bring-up. Multiplayer determinism still requires a real arm64 streflop solution.")
+endif()
+
+if (RECOIL_BUILD_STREFLOP)
 ## note: is removed in ./AI/CMakeLists.txt since it would break AI compilation
 add_definitions(-DSTREFLOP_SSE)
 else ()
@@ -645,7 +675,11 @@ add_subdirectory(doc)
 ### - Install base-files
 ### - Install freedesktop stuff
 ### - Install mingw DLLs
-add_subdirectory(cont)
+if (RECOIL_BUILD_BASECONTENT)
+	add_subdirectory(cont)
+else()
+	add_custom_target(basecontent)
+endif()
 
 # As rts/builds/* depends on most other stuff, we add this one as last
 add_subdirectory(rts)

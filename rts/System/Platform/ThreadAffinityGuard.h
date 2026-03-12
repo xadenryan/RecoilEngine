@@ -3,6 +3,7 @@
 
 #ifdef _WIN32
 #include <windows.h>
+#elif defined(__APPLE__)
 #else
 #include <sched.h>
 #endif
@@ -12,6 +13,7 @@ private:
 #ifdef _WIN32
 	DWORD_PTR savedAffinity;
 	HANDLE threadHandle;
+#elif defined(__APPLE__)
 #else
 	cpu_set_t savedAffinity;
 	pid_t tid;

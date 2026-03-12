@@ -7,6 +7,7 @@
 #include "System/TimeProfiler.h"
 #include "System/Log/ILog.h"
 #include "System/Misc/SpringTime.h"
+#include "System/simd_compat.h"
 
 #include <catch_amalgamated.hpp>
 
@@ -45,6 +46,7 @@ static inline bool equals_distance(const float3& f1, const float3& f2)
 
 static inline bool equals_sse(const float3& f1, const float3& f2)
 {
+#if SPRING_HAVE_SSE_INTRINSICS
 	// same as equals_new() just with SSE
 	union f4 {
 		__m128 sse;
@@ -71,6 +73,9 @@ static inline bool equals_sse(const float3& f1, const float3& f2)
 
 	eq.sse = _mm_cmple_ps(left, right);
 	return ((eq.f[0] != 0) && (eq.f[1] != 0) && (eq.f[2] != 0));
+#else
+	return equals_new(f1, f2);
+#endif
 }
 
 

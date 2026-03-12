@@ -12,6 +12,7 @@
 #include "Game/ClientSetup.h"
 #include "Game/GameData.h"
 #include "Game/GameVersion.h"
+#include "Map/Generation/BlankMapGenerator.h"
 #include "Net/GameServer.h"
 #include "System/Exceptions.h"
 #include "System/GlobalConfig.h"
@@ -176,6 +177,14 @@ int main(int argc, char* argv[])
 			dsGameData->SetRandomSeed(rng.NextInt());
 		} else {
 			dsGameData->SetRandomSeed(dsGameSetup->fixedRNGSeed);
+		}
+
+		if (dsGameSetup->mapName.empty())
+			throw content_error("No map selected in startscript");
+
+		if (dsGameSetup->initBlank) {
+			CBlankMapGenerator gen(dsGameSetup.get());
+			gen.Generate();
 		}
 
 		{

@@ -3,6 +3,7 @@
 #include "System/Log/ILog.h"
 #ifdef _WIN32
 #include <windows.h>
+#elif defined(__APPLE__)
 #else
 #include <sched.h>
 #include <unistd.h>
@@ -16,11 +17,13 @@ ThreadAffinityGuard::ThreadAffinityGuard() : affinitySaved(false) {
 	savedAffinity = SetThreadAffinityMask(threadHandle, ~0);
 	affinitySaved = ( savedAffinity != 0 );
 	if (!affinitySaved) {
-		LOG_L(L_WARNING, "GetThreadAffinityMask failed with error code: %lu", GetLastError());
-	}
-#else
-	tid = syscall(SYS_gettid);  // Get thread ID
-	CPU_ZERO(&savedAffinity);
+			LOG_L(L_WARNING, "GetThreadAffinityMask failed with error code: %lu", GetLastError());
+		}
+#elif defined(__APPLE__)
+		// macOS does not expose the Linux sched affinity APIs this guard relies on.
+	#else
+		tid = syscall(SYS_gettid);  // Get thread ID
+		CPU_ZERO(&savedAffinity);
 	if (sched_getaffinity(tid, sizeof(cpu_set_t), &savedAffinity) == 0) {
 		affinitySaved = true;
 	} else {
@@ -33,12 +36,14 @@ ThreadAffinityGuard::ThreadAffinityGuard() : affinitySaved(false) {
 ThreadAffinityGuard::~ThreadAffinityGuard() {
 	if (affinitySaved) {
 #ifdef _WIN32
-		if (!SetThreadAffinityMask(threadHandle, savedAffinity)) {
-			LOG_L(L_WARNING, "SetThreadAffinityMask failed with error code: %lu", GetLastError());
-		}
-#else
-		if (sched_setaffinity(tid, sizeof(cpu_set_t), &savedAffinity) != 0) {
-			LOG_L(L_WARNING, "Failed to restore thread affinity.");
+			if (!SetThreadAffinityMask(threadHandle, savedAffinity)) {
+				LOG_L(L_WARNING, "SetThreadAffinityMask failed with error code: %lu", GetLastError());
+			}
+#elif defined(__APPLE__)
+			// no-op, affinity cannot be restored because it is not managed on macOS
+	#else
+			if (sched_setaffinity(tid, sizeof(cpu_set_t), &savedAffinity) != 0) {
+				LOG_L(L_WARNING, "Failed to restore thread affinity.");
 		}
 #endif
 	}

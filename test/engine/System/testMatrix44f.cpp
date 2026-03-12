@@ -1,13 +1,12 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#include <xmmintrin.h> //SSE1
-
 #include "System/Matrix44f.h"
 #include "System/float4.h"
 #include "System/TimeProfiler.h"
 #include "System/Misc/SpringTime.h"
 #include "System/Log/ILog.h"
 #include "System/SpringHash.h"
+#include "System/simd_compat.h"
 
 
 #define CATCH_CONFIG_MAIN
@@ -89,6 +88,7 @@ static const int testRuns = 40000000;
 }
 
 
+#if SPRING_HAVE_SSE_INTRINSICS
 /*_noinline*/ static void MatrixVectorSSE(const CMatrix44f& m, const float4& vin, float4* vout)
 {
 	__m128& out = *reinterpret_cast<__m128*>(vout);
@@ -155,6 +155,7 @@ _noinline static void MatrixMatrixMultiply(CMatrix44f* m1, const CMatrix44f& m2)
 	moutc3 = _mm_add_ps(moutc3, _mm_mul_ps(m1c4, m2i11));
 	moutc4 = _mm_add_ps(moutc4, _mm_mul_ps(m1c4, m2i15));
 }
+#endif
 
 
 _noinline static void MatrixMultSoft(CMatrix44f* m1, const CMatrix44f& m2)
@@ -202,6 +203,7 @@ _noinline static int TestMMSpring2()
 	return spring::LiteHash(&m1, sizeof(CMatrix44f), 0);
 }
 
+#if SPRING_HAVE_SSE_INTRINSICS
 _noinline static int TestMMSSE()
 {
 	ScopedOnceTimer timer("Matrix-Matrix-Mult: sse");
@@ -211,6 +213,7 @@ _noinline static int TestMMSSE()
 	}
 	return spring::LiteHash(&m1, sizeof(CMatrix44f), 0);
 }
+#endif
 
 _noinline static int TestSpring()
 {
@@ -247,6 +250,7 @@ _noinline static int TestFPU2()
 	return spring::LiteHash(&v_f, sizeof(float4), 0);
 }
 
+#if SPRING_HAVE_SSE_INTRINSICS
 _noinline static int TestSSE()
 {
 	ScopedOnceTimer timer("Matrix-Vector-Mult: sse");
@@ -258,6 +262,7 @@ _noinline static int TestSSE()
 	}
 	return spring::LiteHash(&v_f, sizeof(float4), 0);
 }
+#endif
 
 
 TEST_CASE("Matrix44VectorMultiply")
@@ -273,7 +278,9 @@ TEST_CASE("Matrix44VectorMultiply")
 	const int correctHash = TestSpring();
 	CHECK(TestFPU1() == correctHash);
 	CHECK(TestFPU2() == correctHash);
+#if SPRING_HAVE_SSE_INTRINSICS
 	CHECK(TestSSE()  == correctHash);
+#endif
 
 	spring_clock::PopTickRate();
 }

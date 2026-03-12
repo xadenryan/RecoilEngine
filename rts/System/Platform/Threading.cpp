@@ -14,6 +14,7 @@
 #endif
 
 #include <functional>
+#include <algorithm>
 #include <memory>
 #include <numeric>
 #include <cinttypes>
@@ -201,10 +202,11 @@ namespace Threading {
 			, [affinityMask](const auto& gc) -> bool { return !!(affinityMask & gc.groupMask); });
 		
 		std::call_once(preferredMaskDetailsLogFlag, [&](){
-			if (preferredCache != pc.groupCaches.end())
+			if (preferredCache != pc.groupCaches.end()) {
 				LOG("[Threading] Preferred performance cache mask is: 0x%08x (L3 sized: %dKB)", preferredCache->groupMask, preferredCache->cacheSizes[2]/1024);
-			else
+			} else {
 				LOG_L(L_WARNING, "[Threading] Failed to find a preferred performance cache mask");
+			}
 		});
 
 		const uint32_t policy = affinityMask
@@ -233,10 +235,11 @@ namespace Threading {
 		const uint32_t fallbackThreadCount = GetPerformanceCpuCores();
 		
 		std::call_once(optimalThreadCountLogFlag, [&](){
-			if (optimalThreadCount > 0)
+			if (optimalThreadCount > 0) {
 				LOG("[Threading] Optimal thread count is %d", optimalThreadCount);
-			else
+			} else {
 				LOG_L(L_WARNING, "[Threading] Failed to determine optimal thread count. Falling back to %d", fallbackThreadCount);
+			}
 		});
 
 		return (optimalThreadCount > 0) ? optimalThreadCount : fallbackThreadCount;
@@ -501,8 +504,14 @@ namespace Threading {
 		tracy::SetThreadName(newname.c_str());
 	#endif
 	#ifndef _WIN32
-		//alternative: pthread_setname_np(pthread_self(), newname.c_str());
-		prctl(PR_SET_NAME, newname.c_str(), 0, 0, 0);
+		#if defined(__APPLE__)
+			// macOS exposes pthread_setname_np() instead of Linux's prctl(PR_SET_NAME).
+			const std::string truncatedName = newname.substr(0, 63);
+			pthread_setname_np(truncatedName.c_str());
+		#else
+			//alternative: pthread_setname_np(pthread_self(), newname.c_str());
+			prctl(PR_SET_NAME, newname.c_str(), 0, 0, 0);
+		#endif
 	#else
 		// adapted from SDL2 code
 		DllLib k32Lib("kernel32.dll");
@@ -527,4 +536,3 @@ namespace Threading {
 	const Error* GetThreadErrorC() { return &threadError; }
 	      Error* GetThreadErrorM() { return &threadError; }
 }
-

@@ -1,6 +1,9 @@
 add_definitions    (-DDEDICATED ${PIC_FLAG} -DNOT_USING_CREG)
 add_definitions    (-DHEADLESS -DNO_SOUND)
-remove_definitions (-DSTREFLOP_SSE -DAVI_CAPTURING)
+if (NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64|i[3-6]86)$")
+	add_definitions(-DDEDICATED_NOSSE)
+endif()
+remove_definitions (-DSTREFLOP_SSE -DSTREFLOP_NEON -DAVI_CAPTURING)
 remove_definitions (-DTRACE_SYNC -DSYNCDEBUG)
 remove_definitions (-DTHREADPOOL)
 
@@ -23,8 +26,9 @@ set(ENGINE_SRC_ROOT_DIR "${CMAKE_SOURCE_DIR}/rts")
 list(APPEND engineDedicatedLibraries ${Boost_REGEX_LIBRARY})
 list(APPEND engineDedicatedLibraries lua archives_nothreadpool 7zip prd::jsoncpp
 	${SPRING_MINIZIP_LIBRARY} ZLIB::ZLIB gflags_nothreads_static Tracy::TracyClient)
+list(APPEND engineDedicatedLibraries squish)
 list(APPEND engineDedicatedLibraries headlessStubs engineSystemNet)
-if(UNIX AND NOT (CMAKE_SYSTEM_NAME MATCHES "OpenBSD"))
+if(UNIX AND NOT APPLE AND NOT (CMAKE_SYSTEM_NAME MATCHES "OpenBSD"))
 	list(APPEND engineDedicatedLibraries libunwind::libunwind)
 endif()
 list(APPEND engineDedicatedLibraries ${LZMA_LIBRARY})
@@ -171,6 +175,7 @@ set(engineDedicatedSources
 	${ENGINE_SRC_ROOT_DIR}/Lua/LuaMemPool.cpp
 	${ENGINE_SRC_ROOT_DIR}/Lua/LuaParser.cpp
 	${ENGINE_SRC_ROOT_DIR}/Lua/LuaUtils.cpp
+	${ENGINE_SRC_ROOT_DIR}/Map/Generation/BlankMapGenerator.cpp
 	${ENGINE_SRC_ROOT_DIR}/Map/MapParser.cpp
 	)
 

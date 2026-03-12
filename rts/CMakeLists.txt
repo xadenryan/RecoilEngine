@@ -35,7 +35,9 @@ if(DEBUG_GLSTATE)
 endif()
 
 ### give error when not found
-find_package_static(DevIL REQUIRED)
+if (RECOIL_BUILD_GRAPHICAL_TARGETS)
+	find_package_static(DevIL REQUIRED)
+endif()
 
 ### Assemble common include dirs
 include_directories(BEFORE lib)
@@ -84,14 +86,16 @@ if    (UNIX AND NOT MINGW)
 endif (UNIX AND NOT MINGW)
 
 find_package_static(ZLIB 1.2.7 REQUIRED)
-list(APPEND engineCommonLibraries DevIL::IL)
+if (RECOIL_BUILD_GRAPHICAL_TARGETS)
+	list(APPEND engineCommonLibraries DevIL::IL)
+endif()
 list(APPEND engineCommonLibraries 7zip prd::jsoncpp ${SPRING_MINIZIP_LIBRARY} ZLIB::ZLIB Tracy::TracyClient)
 list(APPEND engineCommonLibraries lua luasocket archives assimp simdjson::simdjson fastgltf
 	gflags_nothreads_static)
 if(CMAKE_SYSTEM_NAME MATCHES "OpenBSD")
 	list(APPEND engineCommonLibraries execinfo)
 endif(CMAKE_SYSTEM_NAME MATCHES "OpenBSD")
-if (ENABLE_STREFLOP)
+if (RECOIL_BUILD_STREFLOP)
 	list(APPEND engineCommonLibraries streflop)
 endif ()
 
@@ -106,7 +110,7 @@ if    (USE_MIMALLOC)
 endif (USE_MIMALLOC)
 
 
-if(UNIX AND NOT (CMAKE_SYSTEM_NAME MATCHES "OpenBSD"))
+if(UNIX AND NOT APPLE AND NOT (CMAKE_SYSTEM_NAME MATCHES "OpenBSD"))
 	find_package_static(Libunwind 1.4.0 REQUIRED)
 	prefer_static_libs()
 	find_library(LZMA_LIBRARY lzma)
@@ -120,28 +124,35 @@ endif()
 add_subdirectory(Game)
 add_subdirectory(Lua)
 add_subdirectory(ExternalAI)
-add_subdirectory(Rendering)
-add_subdirectory(aGui)
-add_subdirectory(Rml)
-add_subdirectory(Menu)
+if (RECOIL_BUILD_GRAPHICAL_TARGETS)
+	add_subdirectory(Rendering)
+	add_subdirectory(aGui)
+	add_subdirectory(Rml)
+	add_subdirectory(Menu)
+endif()
 add_subdirectory(Map)
 add_subdirectory(Net)
 add_subdirectory(Sim)
 #add_subdirectory(System) # this is already added in ../
 
-make_global_var(engineSources
-		${sources_engine_Net}
-		${sources_engine_Lua}
-		${sources_engine_Map}
+set(engineSourcesLocal
+	${sources_engine_Net}
+	${sources_engine_Lua}
+	${sources_engine_Map}
+	${sources_engine_System}
+	${sources_engine_ExternalAI}
+)
+if (RECOIL_BUILD_GRAPHICAL_TARGETS)
+	list(APPEND engineSourcesLocal
 		${sources_engine_Rendering}
 		${sources_engine_aGui}
 		${sources_engine_Rml}
 		${sources_engine_RmlSolLua}
 		${sources_engine_Menu}
-		${sources_engine_System}
-		${sources_engine_ExternalAI}
 	)
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/lib/assimp/include) #FIXME: hack for rts/Rendering/Models/IModelParser.cpp
+	include_directories(${CMAKE_CURRENT_SOURCE_DIR}/lib/assimp/include) #FIXME: hack for rts/Rendering/Models/IModelParser.cpp
+endif()
+make_global_var(engineSources ${engineSourcesLocal})
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/lib/simdjson/include)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/lib/fastgltf/include)
 

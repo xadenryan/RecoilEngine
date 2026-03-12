@@ -112,8 +112,11 @@ if(NOT DEFINED ENV{CI})
 		${WINMM_LIBRARY}
 		${WS2_32_LIBRARY}
 		7zip
-		streflop
 	)
+
+	if (RECOIL_BUILD_STREFLOP)
+		list(APPEND test_libs streflop)
+	endif()
 
 	add_spring_test(${test_name} "${test_src}" "${test_libs}" "")
 	add_dependencies(test_UDPListener generateVersionFiles)
@@ -375,7 +378,9 @@ endif()
 	set(test_flags "-DUNITSYNC")
 	add_spring_test(${test_name} "${test_src}" "${test_libs}" "${test_flags}")
 	target_include_directories(test_${test_name} PRIVATE ${ENGINE_SOURCE_DIR}/lib/)
-	add_dependencies(test_${test_name} springcontent.sdz)
+	if (RECOIL_BUILD_BASECONTENT)
+		add_dependencies(test_${test_name} springcontent.sdz)
+	endif()
 
 ################################################################################
 ### ThreadPool
@@ -451,22 +456,24 @@ endif()
 	set(test_flags "-DNOT_USING_CREG -DNOT_USING_STREFLOP -DBUILDING_AI")
 	add_spring_test(${test_name} "${test_src}" "${test_libs}" "${test_flags}")
 
-################################################################################
-### SQRT
-	set(test_name SQRT)
-	set(test_src
-			"${CMAKE_CURRENT_SOURCE_DIR}/engine/System/testSQRT.cpp"
-			"${ENGINE_SOURCE_DIR}/System/Misc/SpringTime.cpp"
-			"${ENGINE_SOURCE_DIR}/System/TimeProfiler.cpp"
-			${sources_engine_System_Threading}
-			${test_Common_sources}
-		)
-	set(test_libs
-			streflop
-			${WINMM_LIBRARY}
-		)
-	set(test_flags "-DNOT_USING_CREG -DSTREFLOP_SSE -DBUILDING_AI")
-	add_spring_test(${test_name} "${test_src}" "${test_libs}" "${test_flags}")
+if (RECOIL_BUILD_STREFLOP)
+	################################################################################
+	### SQRT
+		set(test_name SQRT)
+		set(test_src
+				"${CMAKE_CURRENT_SOURCE_DIR}/engine/System/testSQRT.cpp"
+				"${ENGINE_SOURCE_DIR}/System/Misc/SpringTime.cpp"
+				"${ENGINE_SOURCE_DIR}/System/TimeProfiler.cpp"
+				${sources_engine_System_Threading}
+				${test_Common_sources}
+			)
+		set(test_libs
+				streflop
+				${WINMM_LIBRARY}
+			)
+		set(test_flags "-DNOT_USING_CREG -DSTREFLOP_SSE -DBUILDING_AI")
+		add_spring_test(${test_name} "${test_src}" "${test_libs}" "${test_flags}")
+endif()
 
 ################################################################################
 ### ClampRad
