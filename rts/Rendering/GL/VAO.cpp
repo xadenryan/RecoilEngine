@@ -1,6 +1,8 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
 #include "VAO.h"
+
+#include "Rendering/GlobalRenderingInfo.h"
 #include "Rendering/GL/myGL.h"
 #include "System/Misc/TracyDefs.h"
 
@@ -40,4 +42,29 @@ void VAO::Unbind() const
 {
 	RECOIL_DETAILED_TRACY_ZONE;
 	glBindVertexArray(0);
+}
+
+ScopedProgramValidationVAO::ScopedProgramValidationVAO()
+{
+	RECOIL_DETAILED_TRACY_ZONE;
+
+	if (!globalRenderingInfo.glContextIsCore)
+		return;
+
+	GLint boundVAO = 0;
+	glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &boundVAO);
+
+	if (boundVAO != 0)
+		return;
+
+	vao.Bind();
+	bound = true;
+}
+
+ScopedProgramValidationVAO::~ScopedProgramValidationVAO()
+{
+	RECOIL_DETAILED_TRACY_ZONE;
+
+	if (bound)
+		vao.Unbind();
 }

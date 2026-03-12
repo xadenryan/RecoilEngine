@@ -16,7 +16,10 @@
 #include "System/Log/ILog.h"
 #include "System/StringUtil.h"
 #include "System/TypeToStr.h"
+#include "Rendering/GL/VAO.h"
+#include "Rendering/GL/VBO.h"
 #include "Rendering/GlobalRendering.h"
+#include "Rendering/GlobalRenderingInfo.h"
 #include "Rendering/Models/ModelsMemStorage.h"
 #include "Rendering/Models/ModelsMemStorageDefs.h"
 #include "Rendering/UniformConstants.h"
@@ -214,6 +217,189 @@ int LuaShaders::GetShaderLog(lua_State* L)
 
 
 namespace {
+	static bool SupportsUniformBufferObjects()
+	{
+		return VBO::IsSupported(GL_UNIFORM_BUFFER) && IS_GL_FUNCTION_AVAILABLE(glUniformBlockBinding);
+	}
+
+	static bool SupportsShaderStorageBufferObjects()
+	{
+		return VBO::IsSupported(GL_SHADER_STORAGE_BUFFER) && IS_GL_FUNCTION_AVAILABLE(glShaderStorageBlockBinding);
+	}
+
+	static bool SupportsLayoutBindingQualifiers()
+	{
+		return GLAD_GL_ARB_shading_language_420pack || GLAD_GL_VERSION_4_2;
+	}
+
+	static int ParseGlslVersionNumber(const std::string& version)
+	{
+		const auto pos = version.find("#version ");
+
+		if (pos == std::string::npos)
+			return 0;
+
+		const auto numPos = pos + 9;
+		const auto numEnd = version.find_first_not_of("0123456789", numPos);
+
+		if (numPos == numEnd)
+			return 0;
+
+		return std::stoi(version.substr(numPos, numEnd - numPos));
+	}
+
+	static bool ExtractGlslVersion(std::string* src, std::string* version)
+	{
+		if (src->empty())
+			return false;
+
+		const auto pos = src->find("#version ");
+		if (pos == std::string::npos)
+			return false;
+
+		const auto end = src->find('\n', pos);
+		*version = src->substr(pos, end - pos);
+		src->erase(pos, end == std::string::npos ? std::string::npos : (end - pos + 1));
+		return true;
+	}
+
+	static void NormalizeLuaGlslVersionForContext(std::string* version)
+	{
+		if (version->empty() || !globalRenderingInfo.glContextIsCore)
+			return;
+
+		const int requestedVersion = ParseGlslVersionNumber(*version);
+		if (requestedVersion == 0)
+			return;
+
+		if (requestedVersion == 130 && globalRenderingInfo.glslVersionNum >= 150) {
+			*version = "#version 150";
+			return;
+		}
+
+		if (requestedVersion >= 420 && globalRenderingInfo.glslVersionNum >= 410 && globalRenderingInfo.glslVersionNum < requestedVersion) {
+			*version = "#version 410";
+			return;
+		}
+	}
+
+	static void RemoveDirectiveByPrefix(std::string* source, const std::string& directivePrefix)
+	{
+		for (size_t pos = source->find(directivePrefix); pos != std::string::npos; pos = source->find(directivePrefix, pos)) {
+			const size_t lineEnd = source->find('\n', pos);
+
+			if (lineEnd == std::string::npos) {
+				source->erase(pos);
+				break;
+			}
+
+			source->erase(pos, lineEnd - pos + 1);
+		}
+	}
+
+	static bool SourceUsesShaderStorageBufferObjects(const std::string& source)
+	{
+		return
+			(source.find(" buffer ") != std::string::npos) ||
+			(source.find("buffer ") == 0) ||
+			(source.find("readonly buffer") != std::string::npos) ||
+			(source.find("writeonly buffer") != std::string::npos) ||
+			(source.find("coherent buffer") != std::string::npos);
+	}
+
+	static std::vector<std::string> SplitLayoutItems(const std::string& layoutBody)
+	{
+		std::vector<std::string> items;
+		size_t itemStart = 0;
+
+		while (itemStart <= layoutBody.size()) {
+			const size_t itemEnd = layoutBody.find(',', itemStart);
+
+			if (itemEnd == std::string::npos) {
+				items.emplace_back(layoutBody.substr(itemStart));
+				break;
+			}
+
+			items.emplace_back(layoutBody.substr(itemStart, itemEnd - itemStart));
+			itemStart = itemEnd + 1;
+		}
+
+		return items;
+	}
+
+	static void StripLayoutBindingQualifiers(std::string* source)
+	{
+		for (size_t layoutPos = source->find("layout("); layoutPos != std::string::npos; layoutPos = source->find("layout(", layoutPos + 1)) {
+			const size_t bodyStart = layoutPos + strlen("layout(");
+			const size_t bodyEnd = source->find(')', bodyStart);
+
+			if (bodyEnd == std::string::npos)
+				break;
+
+			std::string layoutBody = source->substr(bodyStart, bodyEnd - bodyStart);
+			std::vector<std::string> layoutItems = SplitLayoutItems(layoutBody);
+			std::vector<std::string> filteredItems;
+			filteredItems.reserve(layoutItems.size());
+
+			for (std::string item: layoutItems) {
+				StringTrimInPlace(item);
+				if (item.empty())
+					continue;
+				if (item.rfind("binding", 0) == 0)
+					continue;
+
+				filteredItems.emplace_back(std::move(item));
+			}
+
+			std::string replacement;
+			if (!filteredItems.empty()) {
+				replacement = "layout(";
+				for (size_t i = 0; i < filteredItems.size(); ++i) {
+					if (i > 0)
+						replacement += ", ";
+					replacement += filteredItems[i];
+				}
+				replacement += ")";
+			}
+
+			source->replace(layoutPos, bodyEnd - layoutPos + 1, replacement);
+			layoutPos += replacement.size();
+		}
+	}
+
+	static void NormalizeLuaShaderSourceForContext(std::string* source)
+	{
+		if (source->empty())
+			return;
+
+		if (SupportsUniformBufferObjects())
+			RemoveDirectiveByPrefix(source, "#extension GL_ARB_uniform_buffer_object");
+
+		if (!SupportsLayoutBindingQualifiers()) {
+			RemoveDirectiveByPrefix(source, "#extension GL_ARB_shading_language_420pack");
+			StripLayoutBindingQualifiers(source);
+		}
+
+		if (SupportsShaderStorageBufferObjects() || !SourceUsesShaderStorageBufferObjects(*source))
+			RemoveDirectiveByPrefix(source, "#extension GL_ARB_shader_storage_buffer_object");
+	}
+
+	static void BindEngineUniformBlock(GLuint prog, const char* blockName, GLuint binding)
+	{
+		if (!SupportsUniformBufferObjects())
+			return;
+
+		const GLuint blockIndex = glGetUniformBlockIndex(prog, blockName);
+		if (blockIndex != GL_INVALID_INDEX)
+			glUniformBlockBinding(prog, blockIndex, binding);
+	}
+
+	static void BindEngineUniformBlocks(GLuint prog)
+	{
+		BindEngineUniformBlock(prog, "UniformMatricesBuffer", UniformConstants::UBO_MATRIX_IDX);
+		BindEngineUniformBlock(prog, "UniformParamsBuffer", UniformConstants::UBO_PARAMS_IDX);
+	}
+
 	enum {
 		UNIFORM_TYPE_MIXED = 0, // includes arrays; float or int
 		UNIFORM_TYPE_INT = 1, // includes arrays
@@ -425,12 +611,39 @@ namespace {
 			return 0;
 		}
 
-		std::vector<const GLchar*> text(defs.size() + sources.size());
+		std::string defFlags;
+		for (const std::string& def: defs) {
+			if (!defFlags.empty())
+				EnsureEndsWith(&defFlags, "\n");
+			defFlags += def;
+		}
 
-		for (uint32_t i = 0; i < defs.size(); i++)
-			text[i] = defs[i].c_str();
-		for (uint32_t i = 0; i < sources.size(); i++)
-			text[defs.size() + i] = sources[i].c_str();
+		std::vector<std::string> sourceText = sources;
+		std::string versionStr;
+
+		while (ExtractGlslVersion(&defFlags, &versionStr)) {}
+		for (std::string& source: sourceText) {
+			while (ExtractGlslVersion(&source, &versionStr)) {}
+			NormalizeLuaShaderSourceForContext(&source);
+		}
+
+		NormalizeLuaShaderSourceForContext(&defFlags);
+		NormalizeLuaGlslVersionForContext(&versionStr);
+
+		if (!versionStr.empty())
+			EnsureEndsWith(&versionStr, "\n");
+		if (!defFlags.empty())
+			EnsureEndsWith(&defFlags, "\n");
+
+		std::vector<const GLchar*> text;
+		text.reserve(sourceText.size() * 2 + 4);
+		text.push_back(versionStr.c_str());
+		text.push_back(defFlags.c_str());
+
+		for (std::string& source: sourceText) {
+			text.push_back("#line 1\n");
+			text.push_back(source.c_str());
+		}
 
 		glShaderSource(obj, text.size(), &text[0], nullptr);
 		glCompileShader(obj);
@@ -755,6 +968,9 @@ int LuaShaders::CreateShader(lua_State* L)
 	glLinkProgram(prog);
 	glGetProgramiv(prog, GL_LINK_STATUS, &linkStatus);
 
+	if (linkStatus == GL_TRUE)
+		BindEngineUniformBlocks(prog);
+
 	// Parse active uniforms and locations
 	GLint currentProgram = FillActiveUniforms(p);
 
@@ -766,6 +982,7 @@ int LuaShaders::CreateShader(lua_State* L)
 
 	glUseProgram(currentProgram);
 
+	ScopedProgramValidationVAO validateVAO;
 	glValidateProgram(prog);
 	glGetProgramiv(prog, GL_VALIDATE_STATUS, &validStatus);
 
@@ -1318,14 +1535,20 @@ int LuaShaders::UniformSubroutine(lua_State* L)
  */
 int LuaShaders::GetEngineUniformBufferDef(lua_State* L)
 {
-	if (!globalRendering->haveGL4)
+	if (!SupportsUniformBufferObjects())
 		return 0;
 
 	const int idx = luaL_checkint(L, 1);
 	if (idx < 0 || idx > 1)
 		luaL_error(L, "%s(): Invalid UniformConstants buffer index (%d) requested", __func__, idx);
 
-	lua_pushstring(L, UniformConstants::GetInstance().GetGLSLDefinition(idx).c_str());
+	UniformConstants::GetInstance().Init();
+
+	std::string glslDefinition = UniformConstants::GetInstance().GetGLSLDefinition(idx);
+	if (!SupportsLayoutBindingQualifiers())
+		StripLayoutBindingQualifiers(&glslDefinition);
+
+	lua_pushstring(L, glslDefinition.c_str());
 	return 1;
 }
 
@@ -1340,7 +1563,7 @@ int LuaShaders::GetEngineUniformBufferDef(lua_State* L)
  */
 int LuaShaders::GetEngineModelUniformDataDef(lua_State* L)
 {
-	if (!globalRendering->haveGL4)
+	if (!SupportsShaderStorageBufferObjects())
 		return 0;
 
 	lua_pushstring(L, ModelUniformData::GetGLSLDefinition().c_str());
@@ -1360,7 +1583,7 @@ int LuaShaders::GetEngineModelUniformDataDef(lua_State* L)
  */
 int LuaShaders::GetEngineModelUniformDataSize(lua_State* L)
 {
-	if (!globalRendering->haveGL4)
+	if (!SupportsShaderStorageBufferObjects())
 		return 0;
 
 	const auto sizeInElems = modelUniformsStorage.GetSize();

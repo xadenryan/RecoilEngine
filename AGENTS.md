@@ -23,6 +23,7 @@ Current verified Apple Silicon status on this machine:
 - `engine-legacy` now passes the isolated blank-map GUI smoke in a visible macOS desktop session
 - `test/validation/run-legacy-render-smoke.sh` now captures a deterministic validation frame from the native macOS legacy client, and a repeat capture matches the current baseline through `test/validation/compare-render-images.sh`
 - the modern info-texture path now uses a localized GLSL-version adapter so its core-safe fullscreen shaders can promote from GLSL 1.30 to 1.50 when the macOS client is forced onto an OpenGL core profile
+- the native macOS core-profile path now includes additive Lua and shader compatibility layers for Apple OpenGL 4.1: program validation auto-binds a temporary VAO when needed, Lua VAO draws emulate missing `ARB_base_instance` and `ARB_multi_draw_indirect` behavior per draw, and Lua shader compilation now normalizes GLSL versions, strips unsupported `layout(binding=...)` qualifiers, and rebinds engine UBO blocks explicitly after program link
 - `test/validation/run-bar-realcontent-smoke.sh` now boots the native Apple Silicon legacy client into a real BAR content scene, downloads the required BAR packages through the isolated fixture, and captures a validation screenshot from the native macOS client
 - native graphical-client runtime verification beyond the current blank-map startup and render-capture harness is still in progress because SDL requires a macOS session with visible displays and broader renderer parity work remains
 
@@ -146,7 +147,7 @@ Current Apple Silicon phase-1 progress on this machine has moved beyond planning
 - The current Apple core-profile client path still has known rendering gaps after startup, including the optional uniform-constant UBO path, sky shader parity, and other compatibility-profile shader surfaces that have not been fully modernized yet
 - The current automated render-parity proof only covers the blank-map fixture used by `test/validation/run-legacy-render-smoke.sh`; it is a narrow regression harness, not yet a substitute for broader gameplay or replay-based graphical parity testing
 - Real BAR content startup is now working far enough to render and capture a frame on native Apple Silicon, but repeated BAR capture is still not stable enough to treat as a deterministic graphical parity proof; the latest repeated capture drift remains confined to the top-right quadrant of the captured frame
-- BAR content still loses a number of optional GL4 widgets on this macOS OpenGL 4.1 path because BAR ships shaders that require GLSL 4.20 or 4.30 features beyond Apple OpenGL 4.1, and some Lua-side capability gates still key off legacy raw ARB extension strings instead of the engine's new core-aware helpers
+- BAR content still loses a number of optional GL4 widgets on this macOS OpenGL 4.1 path because BAR ships shaders that truly require SSBO support beyond Apple OpenGL 4.1, and a smaller set of remaining Lua or engine shader surfaces still need additional additive translation for GLSL 1.20 or core-profile `#version` handling
 - The legacy benchmark script at `tools/benchmark/script_benchmark.txt` is not a valid Apple Silicon dedicated smoke target because it assumes external game, map, and AI content that is not part of this phase-1 fixture
 
 ## Dedicated Smoke Verification Contract
@@ -287,16 +288,22 @@ Do not silently disable subsystems just to get a build through. If a temporary d
   Exit criteria: remove the waiver once the remaining fixed-function and compatibility-only texture environment assumptions are eliminated or replaced with a verified modern equivalent.
 
 - Uniform-constant shader path:
-  `UniformConstants::Init()` can currently decline to initialize on the Apple core-profile path when `GL_ARB_uniform_buffer_object` or `GL_ARB_shading_language_420pack` are unavailable.
-  Why: the current renderer still expects the legacy ARB capability and GLSL layout surface, while the Apple OpenGL stack can expose an incomplete subset for this path.
-  Verification impact: client startup and smoke progress do not yet prove parity for the UBO-backed uniform-constant path on Apple Silicon.
-  Exit criteria: provide a verified Apple-safe UBO and GLSL path or add a compatibility adapter that preserves the existing renderer behavior without relying on unsupported extension semantics.
+  the Apple core-profile path now uses a compatibility layer instead of hard-disabling UBO-backed uniform constants when raw `GL_ARB_shading_language_420pack` is missing.
+  Why: Apple OpenGL 4.1 exposes the core UBO surface needed by the engine, but not the full legacy ARB extension string and `layout(binding=...)` path the original shaders assumed.
+  Verification impact: current client startup and BAR smoke now prove that engine UBO blocks can be rebound through explicit `glUniformBlockBinding`, but they do not yet prove full parity for every shader that still assumes newer GLSL layout or SSBO features.
+  Exit criteria: keep the compatibility layer only as long as needed to preserve behavior on Apple OpenGL 4.1, and remove or narrow it once the affected shader surfaces no longer rely on unsupported layout semantics.
+
+- Lua GL4 draw submission:
+  the Apple core-profile path now emulates missing `GL_ARB_base_instance` and `GL_ARB_multi_draw_indirect` behavior for Lua VAO draws instead of disabling those paths outright.
+  Why: BAR's Lua GL4 stack uses modern instanced and indirect draw surfaces, while Apple OpenGL 4.1 lacks the newer draw entry points available on Linux and Windows GL 4.2+ or 4.3+ drivers.
+  Verification impact: BAR real-content smoke now gets past the prior Lua VAO capability failures and can render a frame, but performance and behavioral parity for these emulated draw paths are not yet treated as fully proven across broader gameplay scenes.
+  Exit criteria: verify the additive draw-emulation path against known-good references for the affected widgets and keep it localized so existing higher-capability platforms continue to use their native fast path unchanged.
 
 - BAR GL4 widget surface:
   BAR real-content startup currently disables a number of optional GL4 Lua widgets and effects on the native macOS Apple Silicon path.
-  Why: Apple OpenGL tops out at GLSL 4.10, while parts of BAR's current Lua GL4 stack request GLSL 4.20 or 4.30 features and some Lua capability gates still treat core-promoted VBO and VAO support as unavailable when the raw ARB extension strings are missing.
-  Verification impact: a successful BAR real-content smoke currently proves the native macOS client can boot BAR content and render a frame, but it does not yet prove parity for those higher-end Lua GL4 widgets or full UI and post-processing behavior.
-  Exit criteria: add additive compatibility adapters or capability-translation fixes that let the affected BAR Lua GL4 paths either run correctly on Apple OpenGL 4.1 or degrade in a documented, verified way against a known-good reference.
+  Why: Apple OpenGL tops out at GLSL 4.10 and does not expose SSBO support on this path, while BAR currently ships several Lua GL4 shaders and widgets that require true SSBO-backed `buffer` blocks or still assume newer or legacy GLSL/profile semantics than the current additive translation layer covers.
+  Verification impact: a successful BAR real-content smoke currently proves the native macOS client can boot BAR content and render a frame, but it does not yet prove parity for the affected higher-end Lua GL4 widgets, UI, or post-processing behavior. As of the current verified BAR smoke, the still-failing or removed surfaces include `ResurrectionHalosShader GL4`, `selectedUnitsGroundShader GL4`, `energy iconsShader GL4`, `Health Bars Shader GL4`, `JetShader GL4`, `Ground AO Plates FeaturesShader GL4`, `orbShader GL4`, `allySelectedUnitsShader GL4`, `unitGroupsShader GL4`, `Rank IconsShader GL4`, and the sensor-range stencil shaders; a smaller non-SSBO subset still needs additional translation work, including `AoE Napalm Shader`, `GenBrdfLut`, `GenEnvLut`, `Bloom Combine Shader`, and some remaining engine-side core-profile shader surfaces.
+  Exit criteria: add additive compatibility adapters or capability-translation fixes that let the affected BAR Lua GL4 paths either run correctly on Apple OpenGL 4.1 or degrade in a documented, verified way against a known-good reference, and remove widgets from this note only after the render smoke demonstrates the change rather than assuming it.
 
 - Sky rendering:
   `ISky::SetSky` can currently fail to create `ModernSky` on the Apple core-profile path and fall back to `NullSky`.

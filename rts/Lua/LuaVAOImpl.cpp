@@ -16,6 +16,23 @@
 
 #include "LuaUtils.h"
 
+namespace {
+	bool HasBaseInstanceSupport()
+	{
+		return
+			(GLAD_GL_ARB_base_instance || GLAD_GL_VERSION_4_2) &&
+			IS_GL_FUNCTION_AVAILABLE(glDrawArraysInstancedBaseInstance) &&
+			IS_GL_FUNCTION_AVAILABLE(glDrawElementsInstancedBaseVertexBaseInstance);
+	}
+
+	bool HasMultiDrawElementsIndirectSupport()
+	{
+		return
+			(GLAD_GL_ARB_multi_draw_indirect || GLAD_GL_VERSION_4_3) &&
+			IS_GL_FUNCTION_AVAILABLE(glMultiDrawElementsIndirect);
+	}
+}
+
 /***
  * Vertex Array Object
  * 
@@ -62,8 +79,7 @@ bool LuaVAOImpl::Supported()
 		VBO::IsSupported(GL_ARRAY_BUFFER) &&
 		VAO::IsSupported() &&
 		(GLAD_GL_ARB_instanced_arrays || GLAD_GL_VERSION_3_3) &&
-		(GLAD_GL_ARB_draw_elements_base_vertex || GLAD_GL_VERSION_3_2) &&
-		(GLAD_GL_ARB_multi_draw_indirect || GLAD_GL_VERSION_4_3);
+		(GLAD_GL_ARB_draw_elements_base_vertex || GLAD_GL_VERSION_3_2);
 	return supported;
 }
 
@@ -307,6 +323,40 @@ void LuaVAOImpl::CondInitVAO()
 	}
 }
 
+void LuaVAOImpl::ApplyInstanceBufferBaseInstance(uint32_t baseInstance)
+{
+	if (!instLuaVBO)
+		return;
+
+	const auto glVertexAttribPointerFunc = [](GLuint index, GLint size, GLenum type, GLboolean normalized, GLsizei stride, intptr_t pointer) {
+		if (type == GL_FLOAT || normalized) {
+			glVertexAttribPointer(index, size, type, normalized, stride, reinterpret_cast<void*>(pointer));
+		} else {
+			glVertexAttribIPointer(index, size, type, stride, reinterpret_cast<void*>(pointer));
+		}
+	};
+
+	instLuaVBO->vbo->Bind(GL_ARRAY_BUFFER);
+
+	const intptr_t baseOffset = static_cast<intptr_t>(baseInstance) * instLuaVBO->elemSizeInBytes;
+
+	for (const auto& va : instLuaVBO->bufferAttribDefsVec) {
+		const auto& attr = va.second;
+
+		glVertexAttribPointerFunc(
+			va.first,
+			attr.size,
+			attr.type,
+			attr.normalized,
+			instLuaVBO->elemSizeInBytes,
+			static_cast<intptr_t>(attr.pointer) + baseOffset
+		);
+		glVertexAttribDivisor(va.first, 1);
+	}
+
+	instLuaVBO->vbo->Unbind();
+}
+
 LuaVAOImpl::DrawCheckResult LuaVAOImpl::DrawCheck(GLenum mode, const DrawCheckInput& inputs, bool indexed)
 {
 	LuaVAOImpl::DrawCheckResult result{};
@@ -397,11 +447,22 @@ void LuaVAOImpl::DrawArrays(GLenum mode, sol::optional<int> vertCountOpt, sol::o
 	if (result.instCount == 0)
 		glDrawArrays(mode, result.baseIndex, result.drawCount);
 	else {
-		if (result.baseInstance > 0)
+		if (result.baseInstance > 0 && HasBaseInstanceSupport())
 			glDrawArraysInstancedBaseInstance(mode, result.baseIndex, result.drawCount, result.instCount, result.baseInstance);
-		else
+		else {
+			if (result.baseInstance > 0) {
+				if (!instLuaVBO)
+					LuaUtils::SolLuaError("[LuaVAOImpl::%s]: baseInstance requires an instance buffer when GL_ARB_base_instance is unavailable", __func__);
+
+				ApplyInstanceBufferBaseInstance(result.baseInstance);
+			}
+
 			glDrawArraysInstanced(mode, result.baseIndex, result.drawCount, result.instCount);
+		}
 	}
+
+	if (result.baseInstance > 0 && !HasBaseInstanceSupport())
+		ApplyInstanceBufferBaseInstance(0u);
 
 	vao->Unbind();
 }
@@ -446,9 +507,16 @@ void LuaVAOImpl::DrawElements(GLenum mode, sol::optional<int> indCountOpt, sol::
 		else
 			glDrawElementsBaseVertex(mode, result.drawCount, indexType, INT2PTR(indElemOffsetInBytes), result.baseVertex);
 	} else {
-		if (result.baseInstance > 0)
+		if (result.baseInstance > 0 && HasBaseInstanceSupport()) {
 			glDrawElementsInstancedBaseVertexBaseInstance(mode, result.drawCount, indexType, INT2PTR(indElemOffsetInBytes), result.instCount, result.baseVertex, result.baseInstance);
-		else {
+		} else {
+			if (result.baseInstance > 0) {
+				if (!instLuaVBO)
+					LuaUtils::SolLuaError("[LuaVAOImpl::%s]: baseInstance requires an instance buffer when GL_ARB_base_instance is unavailable", __func__);
+
+				ApplyInstanceBufferBaseInstance(result.baseInstance);
+			}
+
 			if (result.baseVertex == 0)
 				glDrawElementsInstanced(mode, result.drawCount, indexType, INT2PTR(indElemOffsetInBytes), result.instCount);
 			else
@@ -456,6 +524,9 @@ void LuaVAOImpl::DrawElements(GLenum mode, sol::optional<int> indCountOpt, sol::
 		}
 	}
 	#undef INT2PTR
+
+	if (result.baseInstance > 0 && !HasBaseInstanceSupport())
+		ApplyInstanceBufferBaseInstance(0u);
 
 	vao->Unbind();
 
@@ -543,7 +614,37 @@ void LuaVAOImpl::Submit()
 	glPrimitiveRestartIndex(indxLuaVBO->primitiveRestartIndex);
 
 	vao->Bind();
-	glMultiDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, submitCmds.data(), submitCmds.size(), sizeof(SDrawElementsIndirectCommand));
+	if (HasMultiDrawElementsIndirectSupport()) {
+		glMultiDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, submitCmds.data(), submitCmds.size(), sizeof(SDrawElementsIndirectCommand));
+	} else {
+		const auto indexType = indxLuaVBO->bufferAttribDefsVec[0].second.type;
+
+		for (const auto& submitCmd: submitCmds) {
+			if (submitCmd.baseInstance > 0) {
+				if (!instLuaVBO)
+					LuaUtils::SolLuaError("[LuaVAOImpl::%s]: submission fallback requires an instance buffer when GL_ARB_multi_draw_indirect is unavailable", __func__);
+
+				ApplyInstanceBufferBaseInstance(submitCmd.baseInstance);
+			}
+
+			#define INT2PTR(x) (reinterpret_cast<void*>(static_cast<intptr_t>(x)))
+			const auto indElemOffsetInBytes = submitCmd.firstIndex * indxLuaVBO->elemSizeInBytes;
+
+			if (HasBaseInstanceSupport()) {
+				glDrawElementsInstancedBaseVertexBaseInstance(GL_TRIANGLES, submitCmd.indexCount, indexType, INT2PTR(indElemOffsetInBytes), submitCmd.instanceCount, submitCmd.baseVertex, submitCmd.baseInstance);
+			} else {
+				if (submitCmd.baseVertex == 0) {
+					glDrawElementsInstanced(GL_TRIANGLES, submitCmd.indexCount, indexType, INT2PTR(indElemOffsetInBytes), submitCmd.instanceCount);
+				} else {
+					glDrawElementsInstancedBaseVertex(GL_TRIANGLES, submitCmd.indexCount, indexType, INT2PTR(indElemOffsetInBytes), submitCmd.instanceCount, submitCmd.baseVertex);
+				}
+			}
+			#undef INT2PTR
+		}
+
+		if (instLuaVBO)
+			ApplyInstanceBufferBaseInstance(0u);
+	}
 	vao->Unbind();
 
 	glDisable(GL_PRIMITIVE_RESTART);

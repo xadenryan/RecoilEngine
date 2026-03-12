@@ -71,6 +71,7 @@ private:
 
 	[[maybe_unused]] DrawCheckResult DrawCheck(GLenum mode, const DrawCheckInput& inputs, bool indexed);
 	void CondInitVAO();
+	void ApplyInstanceBufferBaseInstance(uint32_t baseInstance);
 	void CheckDrawPrimitiveType(GLenum mode) const;
 	void AttachBufferImpl(const std::shared_ptr<LuaVBOImpl>& luaVBO, std::shared_ptr<LuaVBOImpl>& thisLuaVBO, GLenum reqTarget);
 private:

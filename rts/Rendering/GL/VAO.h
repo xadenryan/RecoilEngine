@@ -31,5 +31,17 @@ private:
 	mutable uint32_t id = 0;
 };
 
-#endif
+class ScopedProgramValidationVAO {
+public:
+	ScopedProgramValidationVAO();
+	~ScopedProgramValidationVAO();
 
+	ScopedProgramValidationVAO(const ScopedProgramValidationVAO&) = delete;
+	ScopedProgramValidationVAO& operator = (const ScopedProgramValidationVAO&) = delete;
+
+private:
+	bool bound = false;
+	VAO vao;
+};
+
+#endif

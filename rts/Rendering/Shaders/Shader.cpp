@@ -531,21 +531,11 @@ namespace Shader {
 	bool GLSLProgramObject::Validate() {
 		RECOIL_DETAILED_TRACY_ZONE;
 		GLint validated = 0;
-		GLint boundVAO = 0;
-		VAO validateVAO;
-
-		if (globalRenderingInfo.glContextIsCore) {
-			glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &boundVAO);
-			if (boundVAO == 0)
-				validateVAO.Bind();
-		}
+		ScopedProgramValidationVAO validateVAO;
 
 		glValidateProgram(objID);
 		glGetProgramiv(objID, GL_VALIDATE_STATUS, &validated);
 		valid = bool(validated);
-
-		if (globalRenderingInfo.glContextIsCore && boundVAO == 0)
-			validateVAO.Unbind();
 
 		// append the validation-log
 		log += glslGetLog(objID);
