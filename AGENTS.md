@@ -22,6 +22,7 @@ Current verified Apple Silicon status on this machine:
 - `engine-legacy` now builds as a native `arm64` Mach-O executable
 - `engine-legacy` now passes the isolated blank-map GUI smoke in a visible macOS desktop session
 - `test/validation/run-legacy-render-smoke.sh` now captures a deterministic validation frame from the native macOS legacy client, and a repeat capture matches the current baseline through `test/validation/compare-render-images.sh`
+- `test/validation/compare-render-images.sh` now compares decoded RGBA pixels through a localized Swift/ImageIO helper instead of relying on `sips` image-format normalization
 - the modern info-texture path now uses a localized GLSL-version adapter so its core-safe fullscreen shaders can promote from GLSL 1.30 to 1.50 when the macOS client is forced onto an OpenGL core profile
 - the native macOS core-profile path now includes additive Lua and shader compatibility layers for Apple OpenGL 4.1: program validation auto-binds a temporary VAO when needed, Lua VAO draws emulate missing `ARB_base_instance` and `ARB_multi_draw_indirect` behavior per draw, and Lua shader compilation now normalizes GLSL versions, strips unsupported `layout(binding=...)` qualifiers, and rebinds engine UBO blocks explicitly after program link
 - the native macOS core-profile path now also uses a shared legacy-GLSL compatibility layer for both engine shaders and Lua shaders so BAR can preserve legacy `gl_*`, `attribute`, `varying`, `texture2D`, compatibility-profile suffix, and undefined non-`GL_*` conditional-macro surfaces through a localized translation layer instead of broad renderer rewrites
@@ -69,7 +70,7 @@ brew install sdl2 freetype fontconfig libogg libvorbis pkgconf devil sevenzip op
 - Homebrew currently provides the SevenZip executable as `7zz`, so the build system must not assume only `7z` or `7za`
 - `sdl2`, `freetype`, `fontconfig`, `libogg`, `libvorbis`, and `pkgconf` are part of the current macOS bootstrap surface and should be installed before debugging higher-level build failures
 - `openal-soft` is required for the current native macOS graphical-client bring-up because Apple-provided `OpenAL.framework` does not expose the EFX surface the current sound implementation expects
-- automated render comparison currently relies on the macOS-provided `sips` binary; on this macOS 26.3.1 host `sips` cannot emit PPM, so `test/validation/compare-render-images.sh` must normalize images to TIFF instead
+- automated render comparison now relies on Xcode Swift tooling (`xcrun swift`, or `swift` as a fallback) plus the macOS ImageIO/CoreGraphics frameworks through `test/validation/compare-render-images.swift`; the earlier `sips` normalization path was replaced because `sips` could not provide a reliable exact-byte comparison flow on this macOS 26.3.1 host
 
 ### Known runtime environment requirements
 
@@ -231,6 +232,8 @@ The current render-validation path is a narrow graphical regression harness for 
 ### Current engine-side validation hook
 
 - `ValidationRenderCapture` currently hides the interface, disables clock, FPS, and speed overlays, moves the active camera to the blank-map center, captures a screenshot at the configured frame, and then requests a clean shutdown
+- `ValidationRenderCapture` also installs a validation-only Lua timing adapter for unsynced GUI contexts so `os.clock`, `Spring.GetTimer`, `Spring.GetTimerMicros`, `Spring.GetFrameTimer`, `Spring.GetDrawFrame`, `Spring.GetFrameTimeOffset`, `Spring.GetLastUpdateSeconds`, and `Spring.DiffTimers` stop depending on wall-clock drift during automated capture
+- `ValidationRenderCapture` currently excludes screen-space UI, cursor, and post-processing draws from the automated comparison frame so repeatable render checks can focus on world-scene parity first
 - `SpringApp::Reload()` and `SpringApp::Kill()` must wait for pending screenshot writes before tearing down the thread pool so validation exits with a fully written PNG instead of a truncated file
 
 ### Pass criteria
@@ -243,7 +246,7 @@ The current render-validation path is a narrow graphical regression harness for 
 
 - Prefer `test/validation/run-legacy-render-smoke.sh` for repeatable native render validation on this machine
 - Pass an optional second argument pointing at a known-good reference image when checking graphical parity for the current blank-map fixture
-- `test/validation/compare-render-images.sh` currently normalizes both images to TIFF via macOS `sips` and expects exact byte equality after normalization; if a future stage requires tolerances, document the accepted tolerance and reason in this file before relaxing the check
+- `test/validation/compare-render-images.sh` currently shells into `test/validation/compare-render-images.swift` and expects exact RGBA pixel equality after decoding both images through ImageIO; if a future stage requires tolerances, document the accepted tolerance and reason in this file before relaxing the check
 
 ## Apple Silicon Porting Principles
 
@@ -318,6 +321,12 @@ Do not silently disable subsystems just to get a build through. If a temporary d
   Why: Apple OpenGL tops out at GLSL 4.10 and does not expose SSBO support on this path, while BAR currently ships several Lua GL4 shaders and widgets that require true SSBO-backed `buffer` blocks or still assume newer or legacy GLSL/profile semantics than the current additive translation layer covers.
   Verification impact: a successful BAR real-content smoke currently proves the native macOS client can boot BAR content and render a frame, but it does not yet prove parity for the affected higher-end Lua GL4 widgets, UI, or post-processing behavior. As of the current verified BAR smoke, the still-failing or removed surfaces include `ResurrectionHalosShader GL4`, `selectedUnitsGroundShader GL4`, `energy iconsShader GL4`, `Health Bars Shader GL4`, `JetShader GL4`, `Ground AO Plates FeaturesShader GL4`, `orbShader GL4`, `allySelectedUnitsShader GL4`, `unitGroupsShader GL4`, `Rank IconsShader GL4`, the sensor-range stencil shaders, and `Contrast Adaptive Sharpen`.
   Exit criteria: add additive compatibility adapters or capability-translation fixes that let the affected BAR Lua GL4 paths either run correctly on Apple OpenGL 4.1 or degrade in a documented, verified way against a known-good reference, and remove widgets from this note only after the render smoke demonstrates the change rather than assuming it.
+
+- Validation render scope:
+  `ValidationRenderCapture` currently suppresses screen-space UI, cursor, and screen-post passes during automated render comparison.
+  Why: the current Apple Silicon/macOS graphical validation effort is still stabilizing repeatable world-scene captures first, and these screen-space surfaces remain more sensitive to session timing and host interaction than the world draw.
+  Verification impact: passing automated render validation currently proves the captured world scene matches the current baseline for the covered fixture, but it does not yet prove parity for UI, cursor, or post-processing output.
+  Exit criteria: restore these surfaces to automated parity coverage once they have a stable fixture or a dedicated comparison harness that can verify them without reintroducing flaky captures.
 
 - Sky rendering:
   `ISky::SetSky` can currently fail to create `ModernSky` on the Apple core-profile path and fall back to `NullSky`.

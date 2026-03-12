@@ -129,6 +129,8 @@ CLuaMenu::CLuaMenu()
 		return;
 	}
 
+	LuaUtils::InstallValidationClock(L);
+
 	RemoveSomeOpenGLFunctions(L);
 
 	lua_settop(L, 0);

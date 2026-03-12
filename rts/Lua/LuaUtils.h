@@ -1,7 +1,6 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
-#ifndef LUA_UTILS_H
-#define LUA_UTILS_H
+#pragma once
 
 #include <string>
 
@@ -152,6 +151,7 @@ class LuaUtils {
 		static int ParseLogLevel(lua_State* L, int index);
 		static int Log(lua_State* L);
 		static bool PushLogEntries(lua_State* L);
+		static void InstallValidationClock(lua_State* L);
 
 		static bool PushCustomBaseFunctions(lua_State* L);
 
@@ -193,7 +193,6 @@ class LuaUtils {
 		static void PushAttackerDef(lua_State* L, const CUnit& attacker);
 		static void PushAttackerDef(lua_State* L, const CUnit* const attacker);
 		static void PushAttackerInfo(lua_State* L, const CUnit* const attacker);
-#endif
 
 		template<typename ...Args>
 		static void SolLuaError(const char* format, Args&& ...args)

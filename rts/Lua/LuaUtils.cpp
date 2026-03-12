@@ -9,6 +9,8 @@
 #include "LuaConfig.h"
 
 #include "Game/GameVersion.h"
+#include "Sim/Misc/GlobalConstants.h"
+#include "Sim/Misc/GlobalSynced.h"
 #include "Rendering/Models/3DModel.hpp"
 #include "Rendering/Models/IModelParser.h"
 #include "Sim/Projectiles/Projectile.h"
@@ -20,6 +22,7 @@
 #include "Sim/Units/CommandAI/CommandDescription.h"
 #include "Sim/Misc/LosHandler.h"
 #include "System/FileSystem/FileSystem.h"
+#include "System/Config/ConfigHandler.h"
 #include "System/Log/ILog.h"
 #include "System/UnorderedMap.hpp"
 #include "System/UnorderedSet.hpp"
@@ -53,6 +56,95 @@ static inline int PosAbsLuaIndex(lua_State* src, int index)
 		return index;
 
 	return (lua_gettop(src) + index + 1);
+}
+
+static int LuaValidationClock(lua_State* L)
+{
+#if !defined UNITSYNC && !defined DEDICATED && !defined BUILDING_AI
+	const float clockSeconds = (gs != nullptr) ? (gs->GetLuaSimFrame() * INV_GAME_SPEED) : 0.0f;
+	lua_pushnumber(L, clockSeconds);
+#else
+	lua_pushnumber(L, 0.0f);
+#endif
+	return 1;
+}
+
+static double GetValidationTimerSeconds()
+{
+#if !defined UNITSYNC && !defined DEDICATED && !defined BUILDING_AI
+	return (gs != nullptr) ? (gs->GetLuaSimFrame() * INV_GAME_SPEED) : 0.0;
+#else
+	return 0.0;
+#endif
+}
+
+static int LuaValidationGetTimer(lua_State* L)
+{
+	lua_pushnumber(L, GetValidationTimerSeconds() * 1000.0);
+	return 1;
+}
+
+static int LuaValidationGetTimerMicros(lua_State* L)
+{
+	lua_pushnumber(L, GetValidationTimerSeconds() * 1000000.0);
+	return 1;
+}
+
+static int LuaValidationGetFrameTimer(lua_State* L)
+{
+	lua_pushnumber(L, GetValidationTimerSeconds() * 1000.0);
+	return 1;
+}
+
+static int LuaValidationGetDrawFrame(lua_State* L)
+{
+#if !defined UNITSYNC && !defined DEDICATED && !defined BUILDING_AI
+	const uint32_t drawFrame = (gs != nullptr) ? gs->GetLuaSimFrame() : 0;
+	lua_pushnumber(L, drawFrame & 0xFFFF);
+	lua_pushnumber(L, (drawFrame >> 16) & 0xFFFF);
+#else
+	lua_pushnumber(L, 0);
+	lua_pushnumber(L, 0);
+#endif
+	return 2;
+}
+
+static int LuaValidationGetFrameTimeOffset(lua_State* L)
+{
+	lua_pushnumber(L, 0.0);
+	return 1;
+}
+
+static int LuaValidationGetLastUpdateSeconds(lua_State* L)
+{
+#if !defined UNITSYNC && !defined DEDICATED && !defined BUILDING_AI
+	lua_pushnumber(L, (gs != nullptr) ? INV_GAME_SPEED : 0.0);
+#else
+	lua_pushnumber(L, 0.0);
+#endif
+	return 1;
+}
+
+static int LuaValidationDiffTimers(lua_State* L)
+{
+	if (!lua_isnumber(L, 1) || !lua_isnumber(L, 2))
+		luaL_error(L, "Incorrect arguments to DiffTimers()");
+
+	double dtSeconds = 0.0;
+
+	if (luaL_optboolean(L, 4, false)) {
+		dtSeconds = (lua_tonumber(L, 1) - lua_tonumber(L, 2)) / 1000000.0;
+	} else {
+		dtSeconds = (lua_tonumber(L, 1) - lua_tonumber(L, 2)) / 1000.0;
+	}
+
+	if (luaL_optboolean(L, 3, false)) {
+		lua_pushnumber(L, dtSeconds * 1000.0);
+	} else {
+		lua_pushnumber(L, dtSeconds);
+	}
+
+	return 1;
 }
 
 
@@ -1428,6 +1520,39 @@ bool LuaUtils::PushLogEntries(lua_State* L)
 	PUSH_LOG_LEVEL(ERROR);
 	PUSH_LOG_LEVEL(FATAL);
 	return true;
+}
+
+void LuaUtils::InstallValidationClock(lua_State* L)
+{
+#if defined UNITSYNC || defined DEDICATED || defined BUILDING_AI
+	return;
+#else
+	if ((configHandler == nullptr) || !configHandler->GetBool("ValidationRenderCapture"))
+		return;
+
+	lua_getglobal(L, "os");
+	if (!lua_istable(L, -1)) {
+		lua_pop(L, 1);
+	} else {
+		LuaPushNamedCFunc(L, "clock", LuaValidationClock);
+		lua_pop(L, 1); // os
+	}
+
+	lua_getglobal(L, "Spring");
+	if (!lua_istable(L, -1)) {
+		lua_pop(L, 1);
+		return;
+	}
+
+	LuaPushNamedCFunc(L, "GetTimer", LuaValidationGetTimer);
+	LuaPushNamedCFunc(L, "GetTimerMicros", LuaValidationGetTimerMicros);
+	LuaPushNamedCFunc(L, "GetFrameTimer", LuaValidationGetFrameTimer);
+	LuaPushNamedCFunc(L, "GetDrawFrame", LuaValidationGetDrawFrame);
+	LuaPushNamedCFunc(L, "GetFrameTimeOffset", LuaValidationGetFrameTimeOffset);
+	LuaPushNamedCFunc(L, "GetLastUpdateSeconds", LuaValidationGetLastUpdateSeconds);
+	LuaPushNamedCFunc(L, "DiffTimers", LuaValidationDiffTimers);
+	lua_pop(L, 1); // Spring
+#endif
 }
 
 /***

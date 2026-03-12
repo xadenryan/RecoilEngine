@@ -1518,21 +1518,25 @@ bool CGame::Draw() {
 	{
 		SCOPED_TIMER("Draw::Screen");
 		SCOPED_GL_DEBUGGROUP("Draw::Screen");
-		if (CUnitDrawer::UseScreenIcons())
-			unitDrawer->DrawUnitIconsScreen();
+		if (!validationRenderCapture) {
+			// Validation capture intentionally excludes screen-space UI and post-processing
+			// so repeatable render comparisons focus on the world scene itself.
+			if (CUnitDrawer::UseScreenIcons())
+				unitDrawer->DrawUnitIconsScreen();
 
-		eventHandler.DrawScreenEffects();
+			eventHandler.DrawScreenEffects();
 
-		hudDrawer->Draw((gu->GetMyPlayer())->fpsController.GetControllee());
-		debugDrawerAI->Draw();
+			hudDrawer->Draw((gu->GetMyPlayer())->fpsController.GetControllee());
+			debugDrawerAI->Draw();
 
-		DrawInputReceivers();
-		DrawInputText();
-		DrawInterfaceWidgets();
-		RmlGui::RenderFrame();
-		mouse->DrawCursor();
+			DrawInputReceivers();
+			DrawInputText();
+			DrawInterfaceWidgets();
+			RmlGui::RenderFrame();
+			mouse->DrawCursor();
 
-		eventHandler.DrawScreenPost();
+			eventHandler.DrawScreenPost();
+		}
 	}
 
 	glEnable(GL_DEPTH_TEST);
