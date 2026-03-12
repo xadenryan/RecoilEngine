@@ -34,6 +34,62 @@ Whenever Apple Silicon or Rosetta x86 bring-up changes, update those docs in the
 - Apple Silicon/macOS work must stay additive and maintainable. Do not regress existing Linux, Windows, or `x86_64` behavior to make the new port work.
 - Record newly discovered Apple Silicon host dependencies in `MACOS_APPLE_SILICON_SETUP.md` in the same change set that introduces them.
 
+## Phase-1 Native Apple Silicon Bring-Up Plan
+
+Phase 1 should target a native macOS `arm64` bring-up for `engine-headless` or `engine-dedicated` first. Do not treat the full graphical client as the initial milestone.
+
+### Phase-1 Goal
+
+Get the engine configuring and building natively on this MacBook Pro for a non-graphical target, with enough validation to prove that Apple Silicon portability work is moving in the right direction.
+
+### Phase-1 Non-Goals
+
+- Do not make the full native macOS graphical client the first milestone
+- Do not assume Zink, MoltenVK, or a Vulkan-based workaround is the primary phase-1 solution
+- Do not accept a Rosetta-only or x86_64-only result as completion for this phase
+
+### Phase-1 Work Sequence
+
+1. SIMD and floating-point portability:
+   audit all x86/SSE assumptions, add a compatibility layer for SIMD headers if needed, and adapt the build so Apple Silicon can use an `arm64` path instead of forcing `STREFLOP_SSE`
+2. Streflop and sync-sensitive math:
+   use the prior arm64 work discussed in issue `#936` and PR `#2540` as reference material, but re-evaluate it carefully for determinism and current-tree compatibility before adopting it
+3. CMake and dependency scoping:
+   remove or narrow global requirements that block non-graphical targets on macOS, especially client-only dependencies such as DevIL and X11
+4. Apple-specific cleanup:
+   remove stale `x86_64`-only assumptions in mac platform code and build flags, and prefer explicit Apple Silicon-compatible compiler and linker settings
+5. First native build milestone:
+   get `engine-headless` or `engine-dedicated` to configure and compile natively on macOS `arm64`
+6. Validation:
+   run the most relevant math, sync-adjacent, and headless-target tests that can execute on this machine, and document any determinism concerns before expanding scope
+7. Only after phase 1:
+   re-evaluate whether the graphical client should target OpenGL core-profile cleanup, a larger renderer refactor, or a separate Vulkan or Metal-oriented effort
+
+### Phase-1 Success Criteria
+
+- Native `arm64` CMake configure succeeds on this machine without relying on Rosetta
+- A non-graphical engine target builds successfully on macOS
+- The initial Apple Silicon math and determinism risks are documented with concrete test results
+- Remaining blockers for a future graphical-client milestone are listed explicitly rather than mixed into phase 1
+
+## Phase-1 Implementation Status
+
+Current Apple Silicon phase-1 progress on this machine has moved beyond planning and into a working native bring-up plus renderer-validation effort.
+
+### Verified current status
+
+- native macOS `arm64` configure succeeds on this machine
+- `engine-dedicated`, `engine-headless`, and `engine-legacy` all build as native Apple Silicon Mach-O executables
+- native targeted math-adjacent tests, blank-map smoke, and deterministic blank-map render validation are working on this machine
+- the narrowed BAR real-content fixture now boots, captures a deterministic validation frame, and compares within the documented BAR-specific tolerance
+- detailed machine-specific verified status, bootstrap commands, runtime requirements, and Rosetta reference-build steps are documented in [MACOS_APPLE_SILICON_SETUP.md](MACOS_APPLE_SILICON_SETUP.md) and [MACOS_X86_REFERENCE_SETUP.md](MACOS_X86_REFERENCE_SETUP.md)
+
+### Current phase-1 limitations
+
+- Streflop and sync-safe multiplayer determinism are still not validated for Apple Silicon, so phase 1 must not be treated as sync-safe completion
+- full native macOS graphical-client playability and rendering parity are still in progress beyond the current narrowed BAR validation fixture
+- BAR content still depends on documented additive compatibility layers, proxy widgets, and selective degradations on the Apple OpenGL 4.1 path; those remain tracked in the Apple-specific disable section of this file
+
 ## Dedicated Smoke Verification Contract
 
 The current dedicated smoke-test story for Apple Silicon should stay additive and hermetic. Do not rely on globally installed game content when validating this machine.
