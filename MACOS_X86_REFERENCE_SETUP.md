@@ -66,6 +66,14 @@ At the moment, that commit lives in the fork configured by this branch:
 
 This is a temporary reference-build dependency, not a long-term upstreaming story. Once equivalent macOS `x86_64` support exists in the upstream `pr-downloader`, point the submodule back at upstream and drop the fork-specific requirement in the same change set.
 
+After checking out a branch that carries this `pr-downloader` update, make sure its nested submodule is present:
+
+```bash
+git submodule update --init --recursive tools/pr-downloader
+```
+
+Without that recursive update, CMake can fail while configuring `pr-downloader` because `tools/pr-downloader/src/lib/readerwriterqueue` is missing.
+
 ## Verified x86_64 Libraries
 
 The following x86_64 dylibs were verified under `/usr/local` on this machine:
