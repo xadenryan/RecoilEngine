@@ -10,6 +10,19 @@ enum RenderCompareError: Error {
 	case sizeMismatch((Int, Int), (Int, Int))
 }
 
+struct RenderCompareThresholds {
+	let maxDiffPixels: Int?
+	let maxChannelDelta: Int?
+}
+
+func loadThreshold(_ name: String) -> Int? {
+	guard let rawValue = ProcessInfo.processInfo.environment[name], !rawValue.isEmpty else {
+		return nil
+	}
+
+	return Int(rawValue)
+}
+
 func loadRGBA(_ path: String) throws -> (size: (Int, Int), pixels: [UInt8]) {
 	let url = URL(fileURLWithPath: path)
 
@@ -50,6 +63,10 @@ guard CommandLine.arguments.count == 3 else {
 
 let referencePath = CommandLine.arguments[1]
 let capturedPath = CommandLine.arguments[2]
+let thresholds = RenderCompareThresholds(
+	maxDiffPixels: loadThreshold("RECOIL_RENDER_COMPARE_MAX_DIFF_PIXELS"),
+	maxChannelDelta: loadThreshold("RECOIL_RENDER_COMPARE_MAX_CHANNEL_DELTA")
+)
 
 do {
 	let reference = try loadRGBA(referencePath)
@@ -64,9 +81,47 @@ do {
 		exit(0)
 	}
 
+	var diffPixels = 0
+	var maxChannelDelta = 0
+
+	for pixelOffset in stride(from: 0, to: reference.pixels.count, by: 4) {
+		var pixelDiffers = false
+
+		for channelOffset in 0..<4 {
+			let lhs = reference.pixels[pixelOffset + channelOffset]
+			let rhs = captured.pixels[pixelOffset + channelOffset]
+			let channelDelta = Int(abs(Int(lhs) - Int(rhs)))
+
+			if channelDelta != 0 {
+				pixelDiffers = true
+				if channelDelta > maxChannelDelta {
+					maxChannelDelta = channelDelta
+				}
+			}
+		}
+
+		if pixelDiffers {
+			diffPixels += 1
+		}
+	}
+
+	let allowedDiffPixels = thresholds.maxDiffPixels ?? 0
+	let allowedChannelDelta = thresholds.maxChannelDelta ?? 0
+
+	if thresholds.maxDiffPixels != nil || thresholds.maxChannelDelta != nil {
+		if diffPixels <= allowedDiffPixels && maxChannelDelta <= allowedChannelDelta {
+			print("Render images match within tolerance.")
+			print("Diff pixels: \(diffPixels)")
+			print("Max channel delta: \(maxChannelDelta)")
+			exit(0)
+		}
+	}
+
 	print("Render images differ.")
 	print("Reference image: \(referencePath)")
 	print("Captured image:  \(capturedPath)")
+	print("Diff pixels: \(diffPixels)")
+	print("Max channel delta: \(maxChannelDelta)")
 	exit(1)
 } catch RenderCompareError.imageLoadFailed(let path) {
 	fputs("Failed to load image for render comparison: \(path)\n", stderr)

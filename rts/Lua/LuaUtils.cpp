@@ -2,8 +2,9 @@
 
 //#include "System/Platform/Win/win32.h"
 
-#include <cstring>
 #include <cctype>
+#include <cstdint>
+#include <cstring>
 
 #include "LuaUtils.h"
 #include "LuaConfig.h"
@@ -67,6 +68,81 @@ static int LuaValidationClock(lua_State* L)
 	lua_pushnumber(L, 0.0f);
 #endif
 	return 1;
+}
+
+static char validationRandomStateKey;
+
+static uint32_t GetValidationRandomState(lua_State* L)
+{
+	lua_pushlightuserdata(L, static_cast<void*>(&validationRandomStateKey));
+	lua_rawget(L, LUA_REGISTRYINDEX);
+
+	uint32_t state = 1u;
+
+	if (lua_isnumber(L, -1))
+		state = uint32_t(lua_tonumber(L, -1));
+
+	lua_pop(L, 1);
+	return state;
+}
+
+static void SetValidationRandomState(lua_State* L, uint32_t state)
+{
+	lua_pushlightuserdata(L, static_cast<void*>(&validationRandomStateKey));
+	lua_pushnumber(L, state);
+	lua_rawset(L, LUA_REGISTRYINDEX);
+}
+
+static uint32_t AdvanceValidationRandomState(lua_State* L)
+{
+	uint32_t state = GetValidationRandomState(L);
+
+	state = (state * 1664525u) + 1013904223u;
+	SetValidationRandomState(L, state);
+
+	return state;
+}
+
+static int LuaValidationMathRandom(lua_State* L)
+{
+	const double randomUnit = AdvanceValidationRandomState(L) / 4294967296.0;
+	const int argCount = lua_gettop(L);
+
+	if (argCount == 0) {
+		lua_pushnumber(L, randomUnit);
+		return 1;
+	}
+
+	if (argCount == 1) {
+		const int upper = luaL_checkint(L, 1);
+
+		if (upper < 1)
+			luaL_error(L, "bad argument #1 to 'random' (interval is empty)");
+
+		lua_pushnumber(L, int(randomUnit * upper) + 1);
+		return 1;
+	}
+
+	if (argCount == 2) {
+		const int lower = luaL_checkint(L, 1);
+		const int upper = luaL_checkint(L, 2);
+
+		if (lower > upper)
+			luaL_error(L, "bad argument #2 to 'random' (interval is empty)");
+
+		lua_pushnumber(L, int(randomUnit * (upper - lower + 1)) + lower);
+		return 1;
+	}
+
+	luaL_error(L, "wrong number of arguments to 'random'");
+	return 0;
+}
+
+static int LuaValidationMathRandomSeed(lua_State* L)
+{
+	const uint32_t seed = uint32_t(luaL_checknumber(L, 1));
+	SetValidationRandomState(L, (seed != 0u) ? seed : 1u);
+	return 0;
 }
 
 static double GetValidationTimerSeconds()
@@ -1530,12 +1606,23 @@ void LuaUtils::InstallValidationClock(lua_State* L)
 	if ((configHandler == nullptr) || !configHandler->GetBool("ValidationRenderCapture"))
 		return;
 
+	SetValidationRandomState(L, 1u);
+
 	lua_getglobal(L, "os");
 	if (!lua_istable(L, -1)) {
 		lua_pop(L, 1);
 	} else {
 		LuaPushNamedCFunc(L, "clock", LuaValidationClock);
 		lua_pop(L, 1); // os
+	}
+
+	lua_getglobal(L, "math");
+	if (!lua_istable(L, -1)) {
+		lua_pop(L, 1);
+	} else {
+		LuaPushNamedCFunc(L, "random", LuaValidationMathRandom);
+		LuaPushNamedCFunc(L, "randomseed", LuaValidationMathRandomSeed);
+		lua_pop(L, 1); // math
 	}
 
 	lua_getglobal(L, "Spring");

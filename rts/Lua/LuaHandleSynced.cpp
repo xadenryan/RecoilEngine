@@ -148,6 +148,8 @@ bool CUnsyncedLuaHandle::Init(std::string code, const std::string& file)
 		#undef KILL
 	}
 
+	LuaUtils::InstallValidationClock(L);
+
 	lua_settop(L, 0);
 
 	// add code from the sub-class

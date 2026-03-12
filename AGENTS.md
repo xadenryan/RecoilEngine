@@ -28,6 +28,7 @@ Current verified Apple Silicon status on this machine:
 - the native macOS core-profile path now also uses a shared legacy-GLSL compatibility layer for both engine shaders and Lua shaders so BAR can preserve legacy `gl_*`, `attribute`, `varying`, `texture2D`, compatibility-profile suffix, and undefined non-`GL_*` conditional-macro surfaces through a localized translation layer instead of broad renderer rewrites
 - the projectile-effects shader path now uses a localized Apple core-profile adapter that replaces fixed-function matrix GLSL state in `ProjFX*` shaders with explicit per-draw view and projection uniforms, and BAR startup now gets past the prior `ProjFXVertProg` core-profile compile failure on this machine
 - `test/validation/run-bar-realcontent-smoke.sh` now boots the native Apple Silicon legacy client into a real BAR content scene, downloads the required BAR packages through the isolated fixture, and captures a validation screenshot from the native macOS client
+- `test/validation/run-bar-realcontent-smoke.sh` now uses a stabilized BAR validation fixture on this machine: it captures the earlier real-content frame, and a repeat capture now matches within the documented BAR-specific image tolerance through `test/validation/compare-render-images.sh`
 - native graphical-client runtime verification beyond the current blank-map startup and render-capture harness is still in progress because SDL requires a macOS session with visible displays and broader renderer parity work remains
 
 ## Apple Silicon Dependency Bootstrap
@@ -80,6 +81,7 @@ brew install sdl2 freetype fontconfig libogg libvorbis pkgconf devil sevenzip op
 - The current isolated native legacy-client smoke must set `ForceCoreContext = 1` in a flat `springsettings.cfg` because the Apple OpenGL path on this machine does not provide a higher-version compatibility context during SDL context creation
 - The current isolated native legacy render-validation smoke also depends on the automation-only config keys `ValidationRenderCapture = 1` and `ValidationRenderCaptureFrame = 30` to trigger the engine-side screenshot hook at a deterministic frame
 - The current BAR real-content smoke depends on `tools/pr-downloader` plus network access to fetch the BAR package and map archives unless a warmed `RECOIL_BAR_CONTENT_CACHE_DIR` is provided
+- The current BAR real-content smoke defaults to `RECOIL_BAR_CAPTURE_FRAME=60` and uses a warmed `RECOIL_BAR_CONTENT_CACHE_DIR` when available to avoid redownloading content during repeat validation
 - `SDL_VIDEODRIVER=offscreen` is not a substitute for a real GUI session on this machine: SDL reports a synthetic `1024x768` mode, but `CreateSDLWindow` still fails with `Could not initialize OpenGL / GLES library`
 - If additional host tools or launch-context requirements are discovered for GUI validation on other Apple Silicon machines, add the exact steps here immediately
 
@@ -149,7 +151,7 @@ Current Apple Silicon phase-1 progress on this machine has moved beyond planning
 - The native macOS graphical client now builds, but automated runtime smoke still requires an interactive macOS desktop session with visible displays; in the current automation context even `launchctl bsexec` against the Aqua login session can still fail before OpenGL initialization with `The video driver did not add any displays`
 - The current Apple core-profile client path still has known rendering gaps after startup, including the optional uniform-constant UBO path, sky shader parity, and other compatibility-profile shader surfaces that have not been fully modernized yet
 - The current automated render-parity proof only covers the blank-map fixture used by `test/validation/run-legacy-render-smoke.sh`; it is a narrow regression harness, not yet a substitute for broader gameplay or replay-based graphical parity testing
-- Real BAR content startup is now working far enough to render and capture a frame on native Apple Silicon, but repeated BAR capture is still not stable enough to treat as a deterministic graphical parity proof; the latest repeat still differs from the previous BAR baseline image through `test/validation/compare-render-images.sh`
+- BAR real-content startup now reaches a stable automated validation fixture on native Apple Silicon: a repeated BAR capture at the current fixture frame matches within the documented BAR-specific image tolerance, but that harness still narrows the scene and does not yet prove full gameplay rendering parity
 - BAR content still loses a number of optional GL4 widgets on this macOS OpenGL 4.1 path because BAR ships shaders that truly require SSBO support beyond Apple OpenGL 4.1, and the currently confirmed remaining non-SSBO BAR shader failure in the latest real-content smoke is `Contrast Adaptive Sharpen`; earlier Apple core-profile failures for `ShadowGenFragProg`, `GrassShaderGL4`, `AoE Napalm Shader`, `GenBrdfLut`, `GenEnvLut`, `ShieldSphereColor`, and `Bloom Combine Shader` are no longer present in the current verified BAR smoke
 - The legacy benchmark script at `tools/benchmark/script_benchmark.txt` is not a valid Apple Silicon dedicated smoke target because it assumes external game, map, and AI content that is not part of this phase-1 fixture
 
@@ -232,7 +234,7 @@ The current render-validation path is a narrow graphical regression harness for 
 ### Current engine-side validation hook
 
 - `ValidationRenderCapture` currently hides the interface, disables clock, FPS, and speed overlays, moves the active camera to the blank-map center, captures a screenshot at the configured frame, and then requests a clean shutdown
-- `ValidationRenderCapture` also installs a validation-only Lua timing adapter for unsynced GUI contexts so `os.clock`, `Spring.GetTimer`, `Spring.GetTimerMicros`, `Spring.GetFrameTimer`, `Spring.GetDrawFrame`, `Spring.GetFrameTimeOffset`, `Spring.GetLastUpdateSeconds`, and `Spring.DiffTimers` stop depending on wall-clock drift during automated capture
+- `ValidationRenderCapture` also installs validation-only Lua timing and RNG adapters in both unsynced GUI contexts and split unsynced gadget states so `os.clock`, `math.random`, `math.randomseed`, `Spring.GetTimer`, `Spring.GetTimerMicros`, `Spring.GetFrameTimer`, `Spring.GetDrawFrame`, `Spring.GetFrameTimeOffset`, `Spring.GetLastUpdateSeconds`, and `Spring.DiffTimers` stop depending on wall-clock or per-run RNG drift during automated capture
 - `ValidationRenderCapture` currently excludes screen-space UI, cursor, and post-processing draws from the automated comparison frame so repeatable render checks can focus on world-scene parity first
 - `SpringApp::Reload()` and `SpringApp::Kill()` must wait for pending screenshot writes before tearing down the thread pool so validation exits with a fully written PNG instead of a truncated file
 
@@ -246,7 +248,32 @@ The current render-validation path is a narrow graphical regression harness for 
 
 - Prefer `test/validation/run-legacy-render-smoke.sh` for repeatable native render validation on this machine
 - Pass an optional second argument pointing at a known-good reference image when checking graphical parity for the current blank-map fixture
-- `test/validation/compare-render-images.sh` currently shells into `test/validation/compare-render-images.swift` and expects exact RGBA pixel equality after decoding both images through ImageIO; if a future stage requires tolerances, document the accepted tolerance and reason in this file before relaxing the check
+- `test/validation/compare-render-images.sh` currently shells into `test/validation/compare-render-images.swift`; it expects exact RGBA pixel equality by default, and only uses a tolerance when the caller explicitly sets `RECOIL_RENDER_COMPARE_MAX_DIFF_PIXELS` and `RECOIL_RENDER_COMPARE_MAX_CHANNEL_DELTA`
+
+## BAR Real-Content Render Validation Contract
+
+The BAR real-content render-validation path is a broader native macOS client fixture than the blank-map harness, but it still intentionally narrows the scene to keep automated verification reviewable and repeatable on this Apple Silicon machine.
+
+### Required smoke-test shape
+
+- Use `test/validation/run-bar-realcontent-smoke.sh` with a warmed `RECOIL_BAR_CONTENT_CACHE_DIR` when possible so repeat validation does not depend on re-downloading the BAR package and map archives
+- Use the isolated BAR validation fixture staged by the smoke wrapper instead of reusing a non-isolated local Spring data dir
+- Keep the current validation capture frame at `60` unless the replacement frame is re-verified and documented in this file
+
+### Pass criteria
+
+- A PNG screenshot is written into the isolated BAR `screenshots/` directory
+- When a reference image is provided, the compare step reports either `Render images match.` or `Render images match within tolerance.`
+- The current BAR fixture tolerance is:
+  - `RECOIL_RENDER_COMPARE_MAX_DIFF_PIXELS=256`
+  - `RECOIL_RENDER_COMPARE_MAX_CHANNEL_DELTA=2`
+- Failed BAR compare output must continue to print the measured diff-pixel count and max channel delta so future drift is quantifiable
+
+### Automation hook
+
+- Prefer `test/validation/run-bar-realcontent-smoke.sh` for repeatable native BAR real-content validation on this machine
+- The wrapper should keep using `test/validation/run-smoke-wrapper.sh` so failed BAR runs do not leave behind `spring*`, `ReportCrash`, or `CrashReporterSupportHelper` processes
+- Treat the current BAR fixture as a regression gate for the documented narrowed scene only; it is not yet a substitute for broader gameplay, replay, or full-UI rendering parity checks
 
 ## Apple Silicon Porting Principles
 
@@ -321,6 +348,12 @@ Do not silently disable subsystems just to get a build through. If a temporary d
   Why: Apple OpenGL tops out at GLSL 4.10 and does not expose SSBO support on this path, while BAR currently ships several Lua GL4 shaders and widgets that require true SSBO-backed `buffer` blocks or still assume newer or legacy GLSL/profile semantics than the current additive translation layer covers.
   Verification impact: a successful BAR real-content smoke currently proves the native macOS client can boot BAR content and render a frame, but it does not yet prove parity for the affected higher-end Lua GL4 widgets, UI, or post-processing behavior. As of the current verified BAR smoke, the still-failing or removed surfaces include `ResurrectionHalosShader GL4`, `selectedUnitsGroundShader GL4`, `energy iconsShader GL4`, `Health Bars Shader GL4`, `JetShader GL4`, `Ground AO Plates FeaturesShader GL4`, `orbShader GL4`, `allySelectedUnitsShader GL4`, `unitGroupsShader GL4`, `Rank IconsShader GL4`, the sensor-range stencil shaders, and `Contrast Adaptive Sharpen`.
   Exit criteria: add additive compatibility adapters or capability-translation fixes that let the affected BAR Lua GL4 paths either run correctly on Apple OpenGL 4.1 or degrade in a documented, verified way against a known-good reference, and remove widgets from this note only after the render smoke demonstrates the change rather than assuming it.
+
+- BAR validation compare tolerance:
+  `test/validation/run-bar-realcontent-smoke.sh` currently allows the compare helper to accept up to `256` differing pixels with a maximum per-channel delta of `2`.
+  Why: after the current validation adapters and earlier BAR capture frame are applied, repeated native BAR captures still show tiny per-pixel rounding drift even when the scene is visually identical, and a very tight tolerance keeps the regression gate useful without masking meaningful rendering changes.
+  Verification impact: a successful BAR real-content compare now proves near-identical output for the current narrowed fixture, not byte-for-byte identity.
+  Exit criteria: remove the BAR-specific tolerance once exact repeated capture becomes stable, or replace it with a stronger reference-backed parity mechanism that makes the tolerance unnecessary.
 
 - Validation render scope:
   `ValidationRenderCapture` currently suppresses screen-space UI, cursor, and screen-post passes during automated render comparison.
