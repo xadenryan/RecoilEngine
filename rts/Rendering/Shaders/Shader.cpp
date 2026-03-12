@@ -5,6 +5,7 @@
 #include "Rendering/Shaders/LuaShaderContainer.h"
 #include "Rendering/Shaders/GLSLCopyState.h"
 #include "Rendering/Shaders/LegacyGlslCompat.h"
+#include "Rendering/Shaders/ShaderPreprocessorUtils.h"
 #include "Rendering/GL/VBO.h"
 #include "Rendering/GL/myGL.h"
 #include "Rendering/GL/VAO.h"
@@ -247,109 +248,6 @@ static void NormalizeShaderSourceForContext(std::string* source)
 	}
 }
 
-static bool StartsWithPreprocessorDirective(const std::string& line, const char* directive)
-{
-	size_t pos = 0;
-	while (pos < line.size() && std::isspace(static_cast<unsigned char>(line[pos])))
-		++pos;
-
-	const size_t directiveLen = std::strlen(directive);
-	if (line.compare(pos, directiveLen, directive) != 0)
-		return false;
-
-	const size_t nextPos = pos + directiveLen;
-	return (nextPos >= line.size()) || !(std::isalnum(static_cast<unsigned char>(line[nextPos])) || line[nextPos] == '_');
-}
-
-static std::set<std::string> CollectDefinedMacros(const std::string& source)
-{
-	std::set<std::string> macros;
-
-	size_t lineStart = 0;
-	while (lineStart <= source.size()) {
-		const size_t lineEnd = source.find('\n', lineStart);
-		const std::string line = source.substr(lineStart, (lineEnd == std::string::npos) ? std::string::npos : (lineEnd - lineStart));
-
-		if (StartsWithPreprocessorDirective(line, "#define")) {
-			size_t pos = line.find("#define");
-			pos += std::strlen("#define");
-			while (pos < line.size() && std::isspace(static_cast<unsigned char>(line[pos])))
-				++pos;
-
-			const size_t macroStart = pos;
-			while (pos < line.size() && (std::isalnum(static_cast<unsigned char>(line[pos])) || line[pos] == '_'))
-				++pos;
-
-			if (macroStart < pos)
-				macros.emplace(line.substr(macroStart, pos - macroStart));
-		}
-
-		if (lineEnd == std::string::npos)
-			break;
-		lineStart = lineEnd + 1;
-	}
-
-	return macros;
-}
-
-static std::set<std::string> CollectConditionalMacros(const std::string& source)
-{
-	std::set<std::string> macros;
-
-	size_t lineStart = 0;
-	while (lineStart <= source.size()) {
-		const size_t lineEnd = source.find('\n', lineStart);
-		const std::string line = source.substr(lineStart, (lineEnd == std::string::npos) ? std::string::npos : (lineEnd - lineStart));
-
-		if (StartsWithPreprocessorDirective(line, "#if") || StartsWithPreprocessorDirective(line, "#elif")) {
-			const char* directive = StartsWithPreprocessorDirective(line, "#elif") ? "#elif" : "#if";
-			size_t pos = line.find(directive);
-			pos = (pos == std::string::npos) ? 0 : (pos + std::strlen(directive));
-
-			for (; pos < line.size(); ++pos) {
-				if (!(std::isalpha(static_cast<unsigned char>(line[pos])) || line[pos] == '_'))
-					continue;
-
-				const size_t macroStart = pos;
-				while (pos < line.size() && (std::isalnum(static_cast<unsigned char>(line[pos])) || line[pos] == '_'))
-					++pos;
-
-				const std::string macro = line.substr(macroStart, pos - macroStart);
-				if (macro != "defined")
-					macros.emplace(macro);
-			}
-		}
-
-		if (lineEnd == std::string::npos)
-			break;
-		lineStart = lineEnd + 1;
-	}
-
-	return macros;
-}
-
-static void AppendConditionalMacroDefaults(std::string* definitions, const std::string& source)
-{
-	std::set<std::string> macros = CollectDefinedMacros(*definitions);
-	const std::set<std::string> sourceMacros = CollectDefinedMacros(source);
-
-	for (const std::string& macro: CollectConditionalMacros(source)) {
-		if (macro.rfind("GL_", 0) == 0)
-			continue;
-
-		if (macros.find(macro) != macros.end() || sourceMacros.find(macro) != sourceMacros.end())
-			continue;
-
-		if (!definitions->empty() && definitions->back() != '\n')
-			definitions->push_back('\n');
-
-		definitions->append("#ifndef " + macro + "\n");
-		definitions->append("#define " + macro + " 0\n");
-		definitions->append("#endif\n");
-		macros.emplace(macro);
-	}
-}
-
 static void MergeLegacyCompatUsage(LegacyGlslCompat::Usage* dst, const LegacyGlslCompat::Usage& src)
 {
 	dst->usesLegacySurface = dst->usesLegacySurface || src.usesLegacySurface;
@@ -522,8 +420,8 @@ namespace Shader {
 		NormalizeShaderSourceForContext(&sourceStr);
 		NormalizeShaderSourceForContext(&defFlags);
 		NormalizeGlslVersionForContext(&versionStr);
-		AppendConditionalMacroDefaults(&defFlags, defFlags);
-		AppendConditionalMacroDefaults(&defFlags, sourceStr);
+		Shader::Preprocessor::AppendConditionalMacroDefaults(&defFlags, defFlags);
+		Shader::Preprocessor::AppendConditionalMacroDefaults(&defFlags, sourceStr);
 
 		if (globalRenderingInfo.glContextIsCore)
 			res->legacyCompatUsage = LegacyGlslCompat::AdaptSource(&sourceStr, type);

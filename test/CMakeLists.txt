@@ -246,6 +246,20 @@ endif()
 	add_spring_test(${test_name} "${test_src}" "${test_libs}" "-DNOT_USING_CREG -DNOT_USING_STREFLOP -DBUILDING_AI")
 
 ################################################################################
+### ShaderPreprocessorUtils
+	set(test_name ShaderPreprocessorUtils)
+	set(test_src
+			"${CMAKE_CURRENT_SOURCE_DIR}/engine/Rendering/testShaderPreprocessorUtils.cpp"
+			${test_Common_sources}
+		)
+
+	set(test_libs
+			""
+		)
+
+	add_spring_test(${test_name} "${test_src}" "${test_libs}" "")
+
+################################################################################
 ### SpringTime
 	set(test_name SpringTime)
 	set(test_src
