@@ -4,12 +4,14 @@
 #include "Rendering/Shaders/ShaderHandler.h"
 #include "Rendering/Shaders/LuaShaderContainer.h"
 #include "Rendering/Shaders/GLSLCopyState.h"
+#include "Rendering/Shaders/LegacyGlslCompat.h"
 #include "Rendering/GL/VBO.h"
 #include "Rendering/GL/myGL.h"
 #include "Rendering/GL/VAO.h"
 #include "Rendering/GlobalRendering.h"
 #include "Rendering/GlobalRenderingInfo.h"
 
+#include "System/Matrix44f.h"
 #include "System/SafeUtil.h"
 #include "System/StringUtil.h"
 #include "System/FileSystem/FileHandler.h"
@@ -19,10 +21,9 @@
 #include "System/Config/ConfigHandler.h"
 
 #include <algorithm>
-#ifdef DEBUG
-	#include <cstring> // strncmp
-#endif
-
+#include <cctype>
+#include <cstring>
+#include <set>
 #include "System/Misc/TracyDefs.h"
 
 
@@ -44,6 +45,8 @@ CONFIG(bool, UseShaderCache).defaultValue(true).description("If already compiled
 
 
 /*****************************************************************/
+
+namespace LegacyGlslCompat = Shader::LegacyGlslCompat;
 
 static bool glslIsValid(GLuint obj)
 {
@@ -125,10 +128,17 @@ static void NormalizeGlslVersionForContext(std::string* version)
 	if (version->empty() || !globalRenderingInfo.glContextIsCore)
 		return;
 
+	LegacyGlslCompat::StripCompatibilityProfileSuffix(version);
+
 	const int requestedVersion = ParseGlslVersionNumber(*version);
 
 	if (requestedVersion == 0)
 		return;
+
+	if (requestedVersion < 130) {
+		*version = (globalRenderingInfo.glslVersionNum >= 150) ? "#version 150\n" : "#version 130\n";
+		return;
+	}
 
 	// Apple core-profile contexts reject several GLSL 130 shaders even though the
 	// same source is otherwise compatible with a 150+ core pipeline.
@@ -225,10 +235,202 @@ static void NormalizeShaderSourceForContext(std::string* source)
 	if (source->empty())
 		return;
 
+	if (globalRenderingInfo.glContextIsCore)
+		LegacyGlslCompat::StripDesktopPrecisionQualifiers(source);
+
+	LegacyGlslCompat::ReplaceAll(source, "#if (GL_ARB_conservative_depth == 1 && SUPPORT_DEPTH_LAYOUT == 1)", "#if (SUPPORT_DEPTH_LAYOUT == 1)");
+	LegacyGlslCompat::ReplaceAll(source, "#if (GL_ARB_conservative_depth == 1)", "#if 0");
+
 	if (!SupportsLayoutBindingQualifiers()) {
 		RemoveDirectiveByPrefix(source, "#extension GL_ARB_shading_language_420pack");
 		StripLayoutBindingQualifiers(source);
 	}
+}
+
+static bool StartsWithPreprocessorDirective(const std::string& line, const char* directive)
+{
+	size_t pos = 0;
+	while (pos < line.size() && std::isspace(static_cast<unsigned char>(line[pos])))
+		++pos;
+
+	const size_t directiveLen = std::strlen(directive);
+	if (line.compare(pos, directiveLen, directive) != 0)
+		return false;
+
+	const size_t nextPos = pos + directiveLen;
+	return (nextPos >= line.size()) || !(std::isalnum(static_cast<unsigned char>(line[nextPos])) || line[nextPos] == '_');
+}
+
+static std::set<std::string> CollectDefinedMacros(const std::string& source)
+{
+	std::set<std::string> macros;
+
+	size_t lineStart = 0;
+	while (lineStart <= source.size()) {
+		const size_t lineEnd = source.find('\n', lineStart);
+		const std::string line = source.substr(lineStart, (lineEnd == std::string::npos) ? std::string::npos : (lineEnd - lineStart));
+
+		if (StartsWithPreprocessorDirective(line, "#define")) {
+			size_t pos = line.find("#define");
+			pos += std::strlen("#define");
+			while (pos < line.size() && std::isspace(static_cast<unsigned char>(line[pos])))
+				++pos;
+
+			const size_t macroStart = pos;
+			while (pos < line.size() && (std::isalnum(static_cast<unsigned char>(line[pos])) || line[pos] == '_'))
+				++pos;
+
+			if (macroStart < pos)
+				macros.emplace(line.substr(macroStart, pos - macroStart));
+		}
+
+		if (lineEnd == std::string::npos)
+			break;
+		lineStart = lineEnd + 1;
+	}
+
+	return macros;
+}
+
+static std::set<std::string> CollectConditionalMacros(const std::string& source)
+{
+	std::set<std::string> macros;
+
+	size_t lineStart = 0;
+	while (lineStart <= source.size()) {
+		const size_t lineEnd = source.find('\n', lineStart);
+		const std::string line = source.substr(lineStart, (lineEnd == std::string::npos) ? std::string::npos : (lineEnd - lineStart));
+
+		if (StartsWithPreprocessorDirective(line, "#if") || StartsWithPreprocessorDirective(line, "#elif")) {
+			const char* directive = StartsWithPreprocessorDirective(line, "#elif") ? "#elif" : "#if";
+			size_t pos = line.find(directive);
+			pos = (pos == std::string::npos) ? 0 : (pos + std::strlen(directive));
+
+			for (; pos < line.size(); ++pos) {
+				if (!(std::isalpha(static_cast<unsigned char>(line[pos])) || line[pos] == '_'))
+					continue;
+
+				const size_t macroStart = pos;
+				while (pos < line.size() && (std::isalnum(static_cast<unsigned char>(line[pos])) || line[pos] == '_'))
+					++pos;
+
+				const std::string macro = line.substr(macroStart, pos - macroStart);
+				if (macro != "defined")
+					macros.emplace(macro);
+			}
+		}
+
+		if (lineEnd == std::string::npos)
+			break;
+		lineStart = lineEnd + 1;
+	}
+
+	return macros;
+}
+
+static void AppendConditionalMacroDefaults(std::string* definitions, const std::string& source)
+{
+	std::set<std::string> macros = CollectDefinedMacros(*definitions);
+	const std::set<std::string> sourceMacros = CollectDefinedMacros(source);
+
+	for (const std::string& macro: CollectConditionalMacros(source)) {
+		if (macro.rfind("GL_", 0) == 0)
+			continue;
+
+		if (macros.find(macro) != macros.end() || sourceMacros.find(macro) != sourceMacros.end())
+			continue;
+
+		if (!definitions->empty() && definitions->back() != '\n')
+			definitions->push_back('\n');
+
+		definitions->append("#ifndef " + macro + "\n");
+		definitions->append("#define " + macro + " 0\n");
+		definitions->append("#endif\n");
+		macros.emplace(macro);
+	}
+}
+
+static void MergeLegacyCompatUsage(LegacyGlslCompat::Usage* dst, const LegacyGlslCompat::Usage& src)
+{
+	dst->usesLegacySurface = dst->usesLegacySurface || src.usesLegacySurface;
+	dst->usesAttributeKeyword = dst->usesAttributeKeyword || src.usesAttributeKeyword;
+	dst->usesVaryingKeyword = dst->usesVaryingKeyword || src.usesVaryingKeyword;
+	dst->usesVertex = dst->usesVertex || src.usesVertex;
+	dst->usesNormal = dst->usesNormal || src.usesNormal;
+	dst->usesColor = dst->usesColor || src.usesColor;
+	dst->usesSecondaryColor = dst->usesSecondaryColor || src.usesSecondaryColor;
+	dst->usesFrontColor = dst->usesFrontColor || src.usesFrontColor;
+	dst->usesFogCoord = dst->usesFogCoord || src.usesFogCoord;
+	dst->usesFogFragCoord = dst->usesFogFragCoord || src.usesFogFragCoord;
+	dst->usesTexCoord = dst->usesTexCoord || src.usesTexCoord;
+	dst->usesClipVertex = dst->usesClipVertex || src.usesClipVertex;
+	dst->usesFragColor = dst->usesFragColor || src.usesFragColor;
+	dst->usesModelViewMatrix = dst->usesModelViewMatrix || src.usesModelViewMatrix;
+	dst->usesProjectionMatrix = dst->usesProjectionMatrix || src.usesProjectionMatrix;
+	dst->usesModelViewProjectionMatrix = dst->usesModelViewProjectionMatrix || src.usesModelViewProjectionMatrix;
+	dst->usesModelViewMatrixInverse = dst->usesModelViewMatrixInverse || src.usesModelViewMatrixInverse;
+	dst->usesProjectionMatrixInverse = dst->usesProjectionMatrixInverse || src.usesProjectionMatrixInverse;
+	dst->usesModelViewProjectionMatrixInverse = dst->usesModelViewProjectionMatrixInverse || src.usesModelViewProjectionMatrixInverse;
+	dst->usesNormalMatrix = dst->usesNormalMatrix || src.usesNormalMatrix;
+	dst->usesFog = dst->usesFog || src.usesFog;
+	dst->usesTexture2D = dst->usesTexture2D || src.usesTexture2D;
+	dst->usesTextureCube = dst->usesTextureCube || src.usesTextureCube;
+
+	for (size_t i = 0; i < dst->usesMultiTexCoord.size(); ++i)
+		dst->usesMultiTexCoord[i] = dst->usesMultiTexCoord[i] || src.usesMultiTexCoord[i];
+}
+
+static void ApplyLegacyProgramCompatUniforms(Shader::GLSLProgramObject* po)
+{
+	if (po == nullptr || !globalRenderingInfo.glContextIsCore)
+		return;
+
+	CMatrix44f modelViewMatrix;
+	CMatrix44f projectionMatrix;
+
+	glGetFloatv(GL_MODELVIEW_MATRIX, modelViewMatrix.m);
+	glGetFloatv(GL_PROJECTION_MATRIX, projectionMatrix.m);
+
+	const CMatrix44f modelViewProjectionMatrix = projectionMatrix * modelViewMatrix;
+	const CMatrix44f modelViewMatrixInverse = modelViewMatrix.InvertAffine();
+	bool projectionInvertible = false;
+	const CMatrix44f projectionMatrixInverse = projectionMatrix.Invert(&projectionInvertible);
+	bool modelViewProjectionInvertible = false;
+	const CMatrix44f modelViewProjectionMatrixInverse = modelViewProjectionMatrix.Invert(&modelViewProjectionInvertible);
+	CMatrix44f normalMatrix4 = modelViewMatrixInverse;
+	normalMatrix4.Transpose();
+
+	const float normalMatrix[9] = {
+		normalMatrix4[0], normalMatrix4[1], normalMatrix4[2],
+		normalMatrix4[4], normalMatrix4[5], normalMatrix4[6],
+		normalMatrix4[8], normalMatrix4[9], normalMatrix4[10],
+	};
+
+	po->IProgramObject::SetUniformMatrix4x4(LegacyGlslCompat::MODELVIEW_MATRIX_UNIFORM, false, modelViewMatrix.m);
+	po->IProgramObject::SetUniformMatrix4x4(LegacyGlslCompat::PROJECTION_MATRIX_UNIFORM, false, projectionMatrix.m);
+	po->IProgramObject::SetUniformMatrix4x4(LegacyGlslCompat::MODELVIEWPROJECTION_MATRIX_UNIFORM, false, modelViewProjectionMatrix.m);
+	po->IProgramObject::SetUniformMatrix4x4(LegacyGlslCompat::MODELVIEW_MATRIX_INVERSE_UNIFORM, false, modelViewMatrixInverse.m);
+	if (projectionInvertible)
+		po->IProgramObject::SetUniformMatrix4x4(LegacyGlslCompat::PROJECTION_MATRIX_INVERSE_UNIFORM, false, projectionMatrixInverse.m);
+	if (modelViewProjectionInvertible)
+		po->IProgramObject::SetUniformMatrix4x4(LegacyGlslCompat::MODELVIEWPROJECTION_MATRIX_INVERSE_UNIFORM, false, modelViewProjectionMatrixInverse.m);
+	po->IProgramObject::SetUniformMatrix3x3(LegacyGlslCompat::NORMAL_MATRIX_UNIFORM, false, normalMatrix);
+
+	float fogColor[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+	float fogDensity = 1.0f;
+	float fogStart = 0.0f;
+	float fogEnd = 1.0f;
+	glGetFloatv(GL_FOG_COLOR, fogColor);
+	glGetFloatv(GL_FOG_DENSITY, &fogDensity);
+	glGetFloatv(GL_FOG_START, &fogStart);
+	glGetFloatv(GL_FOG_END, &fogEnd);
+	const float fogScale = (fogEnd != fogStart) ? (1.0f / (fogEnd - fogStart)) : 0.0f;
+
+	po->IProgramObject::SetUniform4v("recoil_LegacyFog.color", fogColor);
+	po->IProgramObject::SetUniform("recoil_LegacyFog.density", fogDensity);
+	po->IProgramObject::SetUniform("recoil_LegacyFog.start", fogStart);
+	po->IProgramObject::SetUniform("recoil_LegacyFog.end", fogEnd);
+	po->IProgramObject::SetUniform("recoil_LegacyFog.scale", fogScale);
 }
 
 /*****************************************************************/
@@ -320,6 +522,11 @@ namespace Shader {
 		NormalizeShaderSourceForContext(&sourceStr);
 		NormalizeShaderSourceForContext(&defFlags);
 		NormalizeGlslVersionForContext(&versionStr);
+		AppendConditionalMacroDefaults(&defFlags, defFlags);
+		AppendConditionalMacroDefaults(&defFlags, sourceStr);
+
+		if (globalRenderingInfo.glContextIsCore)
+			res->legacyCompatUsage = LegacyGlslCompat::AdaptSource(&sourceStr, type);
 
 		if (!versionStr.empty()) EnsureEndsWith(&versionStr, "\n");
 		if (!defFlags.empty())   EnsureEndsWith(&defFlags,   "\n");
@@ -617,6 +824,7 @@ namespace Shader {
 		RECOIL_DETAILED_TRACY_ZONE;
 		glUseProgram(objID);
 		IProgramObject::Enable();
+		ApplyLegacyProgramCompatUniforms(this);
 	}
 	void GLSLProgramObject::DisableRaw() {
 		RECOIL_DETAILED_TRACY_ZONE;
@@ -726,6 +934,7 @@ namespace Shader {
 		IProgramObject::Release();
 		glDeleteProgram(objID);
 		shaderFlags.Clear();
+		legacyCompatUsage = {};
 
 		objID = 0;
 		curSrcHash = 0;
@@ -738,6 +947,7 @@ namespace Shader {
 
 		const bool oldValid = IsValid();
 		valid = false;
+		legacyCompatUsage = {};
 
 		{
 			// NOTE: this does not preserve the #version pragma
@@ -786,6 +996,7 @@ namespace Shader {
 			objID = glCreateProgram();
 
 			bool shadersValid = true;
+			LegacyGlslCompat::Usage compatUsage;
 			for (IShaderObject*& so: shaderObjs) {
 				assert(dynamic_cast<GLSLShaderObject*>(so));
 
@@ -794,6 +1005,7 @@ namespace Shader {
 
 				if (obj->valid) {
 					glAttachShader(objID, obj->id);
+					MergeLegacyCompatUsage(&compatUsage, obj->legacyCompatUsage);
 				} else {
 					shadersValid = false;
 				}
@@ -810,7 +1022,13 @@ namespace Shader {
 				glBindFragDataLocation(objID, index, name.c_str());
 			}
 
+			if (globalRenderingInfo.glContextIsCore) {
+				LegacyGlslCompat::BindAttribLocations(objID, compatUsage);
+				LegacyGlslCompat::BindFragmentOutputs(objID, compatUsage);
+			}
+
 			glLinkProgram(objID);
+			legacyCompatUsage = compatUsage;
 
 			valid = glslIsValid(objID);
 			log += glslGetLog(objID);

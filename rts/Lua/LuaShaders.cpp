@@ -22,11 +22,15 @@
 #include "Rendering/GlobalRenderingInfo.h"
 #include "Rendering/Models/ModelsMemStorage.h"
 #include "Rendering/Models/ModelsMemStorageDefs.h"
+#include "Rendering/Shaders/LegacyGlslCompat.h"
 #include "Rendering/UniformConstants.h"
 
 #include <string>
 #include <vector>
 #include <algorithm>
+#include <cctype>
+#include <cstring>
+#include <set>
 
 int   intUniformArrayBuf[1024] = {0   };
 float fltUniformArrayBuf[1024] = {0.0f};
@@ -217,6 +221,8 @@ int LuaShaders::GetShaderLog(lua_State* L)
 
 
 namespace {
+	namespace LegacyGlslCompat = Shader::LegacyGlslCompat;
+
 	static bool SupportsUniformBufferObjects()
 	{
 		return VBO::IsSupported(GL_UNIFORM_BUFFER) && IS_GL_FUNCTION_AVAILABLE(glUniformBlockBinding);
@@ -248,6 +254,131 @@ namespace {
 		return std::stoi(version.substr(numPos, numEnd - numPos));
 	}
 
+	static void MergeLegacyCompatUsage(LegacyGlslCompat::Usage* dst, const LegacyGlslCompat::Usage& src)
+	{
+		dst->usesLegacySurface = dst->usesLegacySurface || src.usesLegacySurface;
+		dst->usesAttributeKeyword = dst->usesAttributeKeyword || src.usesAttributeKeyword;
+		dst->usesVaryingKeyword = dst->usesVaryingKeyword || src.usesVaryingKeyword;
+		dst->usesVertex = dst->usesVertex || src.usesVertex;
+		dst->usesNormal = dst->usesNormal || src.usesNormal;
+		dst->usesColor = dst->usesColor || src.usesColor;
+		dst->usesSecondaryColor = dst->usesSecondaryColor || src.usesSecondaryColor;
+		dst->usesFrontColor = dst->usesFrontColor || src.usesFrontColor;
+		dst->usesFogCoord = dst->usesFogCoord || src.usesFogCoord;
+		dst->usesFogFragCoord = dst->usesFogFragCoord || src.usesFogFragCoord;
+		dst->usesTexCoord = dst->usesTexCoord || src.usesTexCoord;
+		dst->usesClipVertex = dst->usesClipVertex || src.usesClipVertex;
+		dst->usesFragColor = dst->usesFragColor || src.usesFragColor;
+		dst->usesModelViewMatrix = dst->usesModelViewMatrix || src.usesModelViewMatrix;
+		dst->usesProjectionMatrix = dst->usesProjectionMatrix || src.usesProjectionMatrix;
+		dst->usesModelViewProjectionMatrix = dst->usesModelViewProjectionMatrix || src.usesModelViewProjectionMatrix;
+		dst->usesModelViewMatrixInverse = dst->usesModelViewMatrixInverse || src.usesModelViewMatrixInverse;
+		dst->usesProjectionMatrixInverse = dst->usesProjectionMatrixInverse || src.usesProjectionMatrixInverse;
+		dst->usesModelViewProjectionMatrixInverse = dst->usesModelViewProjectionMatrixInverse || src.usesModelViewProjectionMatrixInverse;
+		dst->usesNormalMatrix = dst->usesNormalMatrix || src.usesNormalMatrix;
+		dst->usesFog = dst->usesFog || src.usesFog;
+		dst->usesTexture2D = dst->usesTexture2D || src.usesTexture2D;
+		dst->usesTextureCube = dst->usesTextureCube || src.usesTextureCube;
+
+		for (size_t i = 0; i < dst->usesMultiTexCoord.size(); ++i)
+			dst->usesMultiTexCoord[i] = dst->usesMultiTexCoord[i] || src.usesMultiTexCoord[i];
+	}
+
+	static GLint GetProgramUniformLocation(LuaShaders::Program* prog, const char* name)
+	{
+		if (prog == nullptr)
+			return -1;
+
+		const auto iter = prog->activeUniformLocations.find(name);
+		if (iter == prog->activeUniformLocations.end())
+			return -1;
+
+		return iter->second.location;
+	}
+
+	static void SetLegacyCompatMatrixUniform(LuaShaders::Program* prog, const char* name, const CMatrix44f& matrix)
+	{
+		const GLint loc = GetProgramUniformLocation(prog, name);
+		if (loc >= 0)
+			glUniformMatrix4fv(loc, 1, GL_FALSE, matrix.m);
+	}
+
+	static void SetLegacyCompatMatrix3Uniform(LuaShaders::Program* prog, const char* name, const float* matrix)
+	{
+		const GLint loc = GetProgramUniformLocation(prog, name);
+		if (loc >= 0)
+			glUniformMatrix3fv(loc, 1, GL_FALSE, matrix);
+	}
+
+	static void SetLegacyCompatFloatUniform(LuaShaders::Program* prog, const char* name, const float value)
+	{
+		const GLint loc = GetProgramUniformLocation(prog, name);
+		if (loc >= 0)
+			glUniform1f(loc, value);
+	}
+
+	static void SetLegacyCompatFloat4Uniform(LuaShaders::Program* prog, const char* name, const float* values)
+	{
+		const GLint loc = GetProgramUniformLocation(prog, name);
+		if (loc >= 0)
+			glUniform4fv(loc, 1, values);
+	}
+
+	static void ApplyLegacyLuaShaderCompatUniforms(LuaShaders::Program* prog)
+	{
+		if (prog == nullptr || !globalRenderingInfo.glContextIsCore)
+			return;
+
+		CMatrix44f modelViewMatrix;
+		CMatrix44f projectionMatrix;
+
+		glGetFloatv(GL_MODELVIEW_MATRIX, modelViewMatrix.m);
+		glGetFloatv(GL_PROJECTION_MATRIX, projectionMatrix.m);
+
+		SetLegacyCompatMatrixUniform(prog, LegacyGlslCompat::MODELVIEW_MATRIX_UNIFORM, modelViewMatrix);
+		SetLegacyCompatMatrixUniform(prog, LegacyGlslCompat::PROJECTION_MATRIX_UNIFORM, projectionMatrix);
+
+		const CMatrix44f modelViewProjectionMatrix = projectionMatrix * modelViewMatrix;
+		SetLegacyCompatMatrixUniform(prog, LegacyGlslCompat::MODELVIEWPROJECTION_MATRIX_UNIFORM, modelViewProjectionMatrix);
+
+		const CMatrix44f modelViewMatrixInverse = modelViewMatrix.InvertAffine();
+		bool projectionInvertible = false;
+		const CMatrix44f projectionMatrixInverse = projectionMatrix.Invert(&projectionInvertible);
+		bool modelViewProjectionInvertible = false;
+		const CMatrix44f modelViewProjectionMatrixInverse = modelViewProjectionMatrix.Invert(&modelViewProjectionInvertible);
+		CMatrix44f normalMatrix4 = modelViewMatrixInverse;
+		normalMatrix4.Transpose();
+
+		const float normalMatrix[9] = {
+			normalMatrix4[0], normalMatrix4[1], normalMatrix4[2],
+			normalMatrix4[4], normalMatrix4[5], normalMatrix4[6],
+			normalMatrix4[8], normalMatrix4[9], normalMatrix4[10],
+		};
+
+		SetLegacyCompatMatrixUniform(prog, LegacyGlslCompat::MODELVIEW_MATRIX_INVERSE_UNIFORM, modelViewMatrixInverse);
+		if (projectionInvertible)
+			SetLegacyCompatMatrixUniform(prog, LegacyGlslCompat::PROJECTION_MATRIX_INVERSE_UNIFORM, projectionMatrixInverse);
+		if (modelViewProjectionInvertible)
+			SetLegacyCompatMatrixUniform(prog, LegacyGlslCompat::MODELVIEWPROJECTION_MATRIX_INVERSE_UNIFORM, modelViewProjectionMatrixInverse);
+		SetLegacyCompatMatrix3Uniform(prog, LegacyGlslCompat::NORMAL_MATRIX_UNIFORM, normalMatrix);
+
+		float fogColor[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+		float fogDensity = 1.0f;
+		float fogStart = 0.0f;
+		float fogEnd = 1.0f;
+		glGetFloatv(GL_FOG_COLOR, fogColor);
+		glGetFloatv(GL_FOG_DENSITY, &fogDensity);
+		glGetFloatv(GL_FOG_START, &fogStart);
+		glGetFloatv(GL_FOG_END, &fogEnd);
+		const float fogScale = (fogEnd != fogStart) ? (1.0f / (fogEnd - fogStart)) : 0.0f;
+
+		SetLegacyCompatFloat4Uniform(prog, "recoil_LegacyFog.color", fogColor);
+		SetLegacyCompatFloatUniform(prog, "recoil_LegacyFog.density", fogDensity);
+		SetLegacyCompatFloatUniform(prog, "recoil_LegacyFog.start", fogStart);
+		SetLegacyCompatFloatUniform(prog, "recoil_LegacyFog.end", fogEnd);
+		SetLegacyCompatFloatUniform(prog, "recoil_LegacyFog.scale", fogScale);
+	}
+
 	static bool ExtractGlslVersion(std::string* src, std::string* version)
 	{
 		if (src->empty())
@@ -268,9 +399,16 @@ namespace {
 		if (version->empty() || !globalRenderingInfo.glContextIsCore)
 			return;
 
+		LegacyGlslCompat::StripCompatibilityProfileSuffix(version);
+
 		const int requestedVersion = ParseGlslVersionNumber(*version);
 		if (requestedVersion == 0)
 			return;
+
+		if (requestedVersion < 130) {
+			*version = (globalRenderingInfo.glslVersionNum >= 150) ? "#version 150" : "#version 130";
+			return;
+		}
 
 		if (requestedVersion == 130 && globalRenderingInfo.glslVersionNum >= 150) {
 			*version = "#version 150";
@@ -372,6 +510,12 @@ namespace {
 		if (source->empty())
 			return;
 
+		if (globalRenderingInfo.glContextIsCore)
+			LegacyGlslCompat::StripDesktopPrecisionQualifiers(source);
+
+		LegacyGlslCompat::ReplaceAll(source, "#if (GL_ARB_conservative_depth == 1 && SUPPORT_DEPTH_LAYOUT == 1)", "#if (SUPPORT_DEPTH_LAYOUT == 1)");
+		LegacyGlslCompat::ReplaceAll(source, "#if (GL_ARB_conservative_depth == 1)", "#if 0");
+
 		if (SupportsUniformBufferObjects())
 			RemoveDirectiveByPrefix(source, "#extension GL_ARB_uniform_buffer_object");
 
@@ -382,6 +526,109 @@ namespace {
 
 		if (SupportsShaderStorageBufferObjects() || !SourceUsesShaderStorageBufferObjects(*source))
 			RemoveDirectiveByPrefix(source, "#extension GL_ARB_shader_storage_buffer_object");
+	}
+
+	static bool StartsWithPreprocessorDirective(const std::string& line, const char* directive)
+	{
+		size_t pos = 0;
+		while (pos < line.size() && std::isspace(static_cast<unsigned char>(line[pos])))
+			++pos;
+
+		const size_t directiveLen = std::strlen(directive);
+		if (line.compare(pos, directiveLen, directive) != 0)
+			return false;
+
+		const size_t nextPos = pos + directiveLen;
+		return (nextPos >= line.size()) || !(std::isalnum(static_cast<unsigned char>(line[nextPos])) || line[nextPos] == '_');
+	}
+
+	static std::set<std::string> CollectDefinedMacros(const std::string& source)
+	{
+		std::set<std::string> macros;
+
+		size_t lineStart = 0;
+		while (lineStart <= source.size()) {
+			const size_t lineEnd = source.find('\n', lineStart);
+			const std::string line = source.substr(lineStart, (lineEnd == std::string::npos) ? std::string::npos : (lineEnd - lineStart));
+
+			if (StartsWithPreprocessorDirective(line, "#define")) {
+				size_t pos = line.find("#define");
+				pos += std::strlen("#define");
+				while (pos < line.size() && std::isspace(static_cast<unsigned char>(line[pos])))
+					++pos;
+
+				const size_t macroStart = pos;
+				while (pos < line.size() && (std::isalnum(static_cast<unsigned char>(line[pos])) || line[pos] == '_'))
+					++pos;
+
+				if (macroStart < pos)
+					macros.emplace(line.substr(macroStart, pos - macroStart));
+			}
+
+			if (lineEnd == std::string::npos)
+				break;
+			lineStart = lineEnd + 1;
+		}
+
+		return macros;
+	}
+
+	static std::set<std::string> CollectConditionalMacros(const std::string& source)
+	{
+		std::set<std::string> macros;
+
+		size_t lineStart = 0;
+		while (lineStart <= source.size()) {
+			const size_t lineEnd = source.find('\n', lineStart);
+			const std::string line = source.substr(lineStart, (lineEnd == std::string::npos) ? std::string::npos : (lineEnd - lineStart));
+
+			if (StartsWithPreprocessorDirective(line, "#if") || StartsWithPreprocessorDirective(line, "#elif")) {
+				const char* directive = StartsWithPreprocessorDirective(line, "#elif") ? "#elif" : "#if";
+				size_t pos = line.find(directive);
+				pos = (pos == std::string::npos) ? 0 : (pos + std::strlen(directive));
+
+				for (; pos < line.size(); ++pos) {
+					if (!(std::isalpha(static_cast<unsigned char>(line[pos])) || line[pos] == '_'))
+						continue;
+
+					const size_t macroStart = pos;
+					while (pos < line.size() && (std::isalnum(static_cast<unsigned char>(line[pos])) || line[pos] == '_'))
+						++pos;
+
+					const std::string macro = line.substr(macroStart, pos - macroStart);
+					if (macro != "defined")
+						macros.emplace(macro);
+				}
+			}
+
+			if (lineEnd == std::string::npos)
+				break;
+			lineStart = lineEnd + 1;
+		}
+
+		return macros;
+	}
+
+	static void AppendConditionalMacroDefaults(std::string* definitions, const std::string& source)
+	{
+		std::set<std::string> macros = CollectDefinedMacros(*definitions);
+		const std::set<std::string> sourceMacros = CollectDefinedMacros(source);
+
+		for (const std::string& macro: CollectConditionalMacros(source)) {
+			if (macro.rfind("GL_", 0) == 0)
+				continue;
+
+			if (macros.find(macro) != macros.end() || sourceMacros.find(macro) != sourceMacros.end())
+				continue;
+
+			if (!definitions->empty() && definitions->back() != '\n')
+				definitions->push_back('\n');
+
+			definitions->append("#ifndef " + macro + "\n");
+			definitions->append("#define " + macro + " 0\n");
+			definitions->append("#endif\n");
+			macros.emplace(macro);
+		}
 	}
 
 	static void BindEngineUniformBlock(GLuint prog, const char* blockName, GLuint binding)
@@ -597,6 +844,7 @@ namespace {
 		const std::vector<std::string>& defs,
 		const std::vector<std::string>& sources,
 		const GLenum type,
+		LegacyGlslCompat::Usage* compatUsage,
 		bool& success
 	) {
 		if (sources.empty()) {
@@ -622,9 +870,16 @@ namespace {
 		std::string versionStr;
 
 		while (ExtractGlslVersion(&defFlags, &versionStr)) {}
+		AppendConditionalMacroDefaults(&defFlags, defFlags);
 		for (std::string& source: sourceText) {
 			while (ExtractGlslVersion(&source, &versionStr)) {}
 			NormalizeLuaShaderSourceForContext(&source);
+			AppendConditionalMacroDefaults(&defFlags, source);
+
+			if (globalRenderingInfo.glContextIsCore) {
+				const auto usage = LegacyGlslCompat::AdaptSource(&source, type);
+				MergeLegacyCompatUsage(compatUsage, usage);
+			}
 		}
 
 		NormalizeLuaShaderSourceForContext(&defFlags);
@@ -885,26 +1140,27 @@ int LuaShaders::CreateShader(lua_State* L)
 		return 0;
 
 	bool success;
-	const GLuint vertObj = CompileObject(L, shdrDefs, vertSrcs, GL_VERTEX_SHADER, success);
+	LegacyGlslCompat::Usage compatUsage;
+	const GLuint vertObj = CompileObject(L, shdrDefs, vertSrcs, GL_VERTEX_SHADER, &compatUsage, success);
 
 	if (!success)
 		return 0;
 
-	const GLuint tcsObj = CompileObject(L, shdrDefs,  tcsSrcs, GL_TESS_CONTROL_SHADER, success);
+	const GLuint tcsObj = CompileObject(L, shdrDefs,  tcsSrcs, GL_TESS_CONTROL_SHADER, &compatUsage, success);
 
 	if (!success) {
 		glDeleteShader(vertObj);
 		return 0;
 	}
 
-	const GLuint tesObj = CompileObject(L, shdrDefs,  tesSrcs,  GL_TESS_EVALUATION_SHADER, success);
+	const GLuint tesObj = CompileObject(L, shdrDefs,  tesSrcs,  GL_TESS_EVALUATION_SHADER, &compatUsage, success);
 
 	if (!success) {
 		glDeleteShader(vertObj);
 		glDeleteShader(tcsObj);
 		return 0;
 	}
-	const GLuint geomObj = CompileObject(L, shdrDefs, geomSrcs, GL_GEOMETRY_SHADER, success);
+	const GLuint geomObj = CompileObject(L, shdrDefs, geomSrcs, GL_GEOMETRY_SHADER, &compatUsage, success);
 
 	if (!success) {
 		glDeleteShader(vertObj);
@@ -913,7 +1169,7 @@ int LuaShaders::CreateShader(lua_State* L)
 		return 0;
 	}
 
-	const GLuint fragObj = CompileObject(L, shdrDefs, fragSrcs, GL_FRAGMENT_SHADER, success);
+	const GLuint fragObj = CompileObject(L, shdrDefs, fragSrcs, GL_FRAGMENT_SHADER, &compatUsage, success);
 
 	if (!success) {
 		glDeleteShader(vertObj);
@@ -923,7 +1179,7 @@ int LuaShaders::CreateShader(lua_State* L)
 		return 0;
 	}
 
-	const GLuint compObj = CompileObject(L, shdrDefs, compSrcs, GL_COMPUTE_SHADER, success);
+	const GLuint compObj = CompileObject(L, shdrDefs, compSrcs, GL_COMPUTE_SHADER, &compatUsage, success);
 
 	if (!success)
 		return 0;
@@ -964,6 +1220,11 @@ int LuaShaders::CreateShader(lua_State* L)
 
 	GLint linkStatus;
 	GLint validStatus;
+
+	if (globalRenderingInfo.glContextIsCore) {
+		LegacyGlslCompat::BindAttribLocations(prog, compatUsage);
+		LegacyGlslCompat::BindFragmentOutputs(prog, compatUsage);
+	}
 
 	glLinkProgram(prog);
 	glGetProgramiv(prog, GL_LINK_STATUS, &linkStatus);
@@ -1050,6 +1311,7 @@ int LuaShaders::UseShader(lua_State* L)
 	} else {
 		activeProgram = prog;
 		glUseProgram(prog->id);
+		ApplyLegacyLuaShaderCompatUniforms(prog);
 		lua_pushboolean(L, true);
 	}
 	return 1;
@@ -1087,6 +1349,7 @@ int LuaShaders::ActiveShader(lua_State* L)
 
 	glUseProgram(prog->id);
 	activeProgram = prog;
+	ApplyLegacyLuaShaderCompatUniforms(prog);
 	activeShaderDepth++;
 	const int error = lua_pcall(L, lua_gettop(L) - 2, 0, 0);
 	activeShaderDepth--;

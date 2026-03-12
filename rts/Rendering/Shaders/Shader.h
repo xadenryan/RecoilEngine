@@ -15,6 +15,7 @@
 #include "System/StringHash.h"
 #include "System/Cpp11Compat.hpp"
 #include "Rendering/GL/VertexArrayTypes.h"
+#include "Rendering/Shaders/LegacyGlslCompat.h"
 
 struct fast_hash
 {
@@ -94,6 +95,7 @@ namespace Shader {
 			unsigned int id;
 			bool      valid;
 			std::string log;
+			LegacyGlslCompat::Usage legacyCompatUsage;
 		};
 
 		/// @brief Returns a GLSL shader object in an unique pointer that auto deletes that instance.
@@ -495,6 +497,7 @@ namespace Shader {
 	private:
 		std::vector<size_t> uniformLocs;
 		unsigned int curSrcHash;
+		LegacyGlslCompat::Usage legacyCompatUsage;
 	};
 
 	template<typename VAT>
