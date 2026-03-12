@@ -9,21 +9,21 @@ if [ "${RECOIL_SMOKE_WRAPPED:-0}" -ne 1 ]; then
 fi
 
 if [ $# -lt 1 ]; then
-	echo "Usage: $0 /path/to/spring-dedicated [timeout-seconds]"
+	echo "Usage: $0 /path/to/spring-headless [timeout-seconds]"
 	exit 1
 fi
 
-SPRING_DEDICATED="$1"
+SPRING_HEADLESS="$1"
 TIMEOUT_SECS="${2:-20}"
 
-if [ ! -x "$SPRING_DEDICATED" ]; then
-	echo "Parameter 1 $SPRING_DEDICATED isn't executable!"
+if [ ! -x "$SPRING_HEADLESS" ]; then
+	echo "Parameter 1 $SPRING_HEADLESS isn't executable!"
 	exit 1
 fi
 
 ROOT_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)
 TMP_BASE="${TMPDIR:-/tmp}"
-ISOLATION_DIR=$(mktemp -d "$TMP_BASE/recoil-dedicated-smoke.XXXXXX")
+ISOLATION_DIR=$(mktemp -d "$TMP_BASE/recoil-headless-smoke.XXXXXX")
 PID=""
 
 cleanup() {
@@ -35,18 +35,18 @@ cleanup() {
 
 trap cleanup EXIT INT TERM
 
-mkdir -p "$ISOLATION_DIR/base" "$ISOLATION_DIR/games" "$ISOLATION_DIR/demos-server"
+mkdir -p "$ISOLATION_DIR/base" "$ISOLATION_DIR/games" "$ISOLATION_DIR/demos"
 
-cp -R "$ROOT_DIR/cont/base/bitmaps"      "$ISOLATION_DIR/base/bitmaps.sdd"
-cp -R "$ROOT_DIR/cont/base/cursors"      "$ISOLATION_DIR/base/cursors.sdd"
-cp -R "$ROOT_DIR/cont/base/maphelper"    "$ISOLATION_DIR/base/maphelper.sdd"
+cp -R "$ROOT_DIR/cont/base/bitmaps"       "$ISOLATION_DIR/base/bitmaps.sdd"
+cp -R "$ROOT_DIR/cont/base/cursors"       "$ISOLATION_DIR/base/cursors.sdd"
+cp -R "$ROOT_DIR/cont/base/maphelper"     "$ISOLATION_DIR/base/maphelper.sdd"
 cp -R "$ROOT_DIR/cont/base/springcontent" "$ISOLATION_DIR/base/springcontent.sdd"
 
 mkdir -p "$ISOLATION_DIR/games/arm64-smoke.sdd"
 cat > "$ISOLATION_DIR/games/arm64-smoke.sdd/modinfo.lua" <<'EOF'
 return {
 	name = "ARM64 Smoke Test",
-	description = "Minimal dedicated smoke-test game for native Apple Silicon verification",
+	description = "Minimal headless smoke-test game for native Apple Silicon verification",
 	modtype = 1,
 	depend = {
 		"Spring content v1",
@@ -89,7 +89,7 @@ cat > "$ISOLATION_DIR/script.txt" <<'EOF'
 }
 EOF
 
-"$SPRING_DEDICATED" \
+"$SPRING_HEADLESS" \
 	-nocolor \
 	-isolation \
 	-isolation-dir "$ISOLATION_DIR" \
@@ -101,10 +101,9 @@ PASSED=0
 ITER=0
 while [ "$ITER" -lt "$TIMEOUT_SECS" ]; do
 	if [ -f "$ISOLATION_DIR/infolog.txt" ]; then
-		if grep -q "\[script-checksums\]" "$ISOLATION_DIR/infolog.txt" \
-			&& grep -q "starting server..." "$ISOLATION_DIR/infolog.txt" \
-			&& grep -q "Server started on port" "$ISOLATION_DIR/infolog.txt" \
-			&& grep -q "recording demo:" "$ISOLATION_DIR/infolog.txt"; then
+		if grep -q "\[PreGame::StartServer\]" "$ISOLATION_DIR/infolog.txt" \
+			&& grep -q "\[GameServer\] Initialize:" "$ISOLATION_DIR/infolog.txt" \
+			&& grep -q "\[PreGame::GameDataReceived\] recording demo to" "$ISOLATION_DIR/infolog.txt"; then
 			PASSED=1
 			break
 		fi
@@ -119,7 +118,7 @@ while [ "$ITER" -lt "$TIMEOUT_SECS" ]; do
 done
 
 if [ "$PASSED" -ne 1 ]; then
-	echo "Dedicated blank-map smoke failed."
+	echo "Headless blank-map smoke failed."
 	echo "Isolation dir: $ISOLATION_DIR"
 	if [ -f "$ISOLATION_DIR/infolog.txt" ]; then
 		tail -n 200 "$ISOLATION_DIR/infolog.txt"
@@ -127,8 +126,8 @@ if [ "$PASSED" -ne 1 ]; then
 	exit 1
 fi
 
-if ! ls "$ISOLATION_DIR"/demos-server/*.sdfz >/dev/null 2>&1; then
-	echo "Dedicated blank-map smoke failed: demo file was not created."
+if ! ls "$ISOLATION_DIR"/demos/*.sdfz >/dev/null 2>&1; then
+	echo "Headless blank-map smoke failed: demo file was not created."
 	echo "Isolation dir: $ISOLATION_DIR"
 	exit 1
 fi
@@ -137,5 +136,5 @@ kill "$PID" 2>/dev/null || true
 wait "$PID" 2>/dev/null || true
 PID=""
 
-echo "Dedicated blank-map smoke passed."
+echo "Headless blank-map smoke passed."
 echo "Isolation dir: $ISOLATION_DIR"

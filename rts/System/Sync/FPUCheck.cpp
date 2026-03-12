@@ -1,5 +1,7 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
+#include <atomic>
+
 #ifdef USE_VALGRIND
 	#include <valgrind/valgrind.h>
 #endif
@@ -12,7 +14,13 @@
 #include "System/Platform/CpuID.h"
 
 #ifndef STREFLOP_H
-void good_fpu_control_registers(const char* text) { LOG_L(L_WARNING, "[%s](%s) streflop is disabled", __func__, text); }
+void good_fpu_control_registers(const char* text)
+{
+	static std::atomic<bool> warned{false};
+
+	if (!warned.exchange(true))
+		LOG_L(L_WARNING, "[%s](%s) streflop is disabled", __func__, text);
+}
 void good_fpu_init() { LOG_L(L_WARNING, "[%s] streflop is disabled", __func__); }
 
 #else
@@ -233,4 +241,3 @@ namespace springproc {
 		return bits;
 	}
 }
-

@@ -4,21 +4,6 @@
 
 #include <limits>
 
-#if defined(_MSC_VER)
-#include <intrin.h>
-// visual c
-inline int __bsfd (int mask)
-{
-	unsigned long index;
-	_BitScanForward(&index, mask);
-	return index;
-}
-#elif defined(__GNUC__)
-#include <x86intrin.h>
-#else
-#error no bsfd intrinsic currently set
-#endif
-
 #include "NodeLayer.h"
 #include "PathManager.h"
 #include "Node.h"

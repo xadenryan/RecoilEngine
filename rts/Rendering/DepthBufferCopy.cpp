@@ -5,10 +5,22 @@
 
 #include "System/EventHandler.h"
 #include "Rendering/GlobalRendering.h"
+#include "Rendering/GlobalRenderingInfo.h"
 #include "Rendering/GL/myGL.h"
 #include "Rendering/GL/FBO.h"
 
 std::unique_ptr<DepthBufferCopy> depthBufferCopy = nullptr;
+
+namespace {
+static bool UseAppleCoreDepthBufferCopyFallback()
+{
+#if defined(__APPLE__)
+	return globalRenderingInfo.glContextIsCore;
+#else
+	return false;
+#endif
+}
+}
 
 DepthBufferCopy::DepthBufferCopy()
 	: CEventClient("[DepthBufferCopy]", 012345, false)
@@ -64,11 +76,17 @@ void DepthBufferCopy::ViewResize()
 
 bool DepthBufferCopy::IsValid(bool ms) const {
 	const auto& depthFBO = depthFBOs[ms];
+	if (UseAppleCoreDepthBufferCopyFallback())
+		return false;
+
 	return depthFBO && depthFBO->IsValid() && depthTextures[ms] > 0;
 }
 
 void DepthBufferCopy::MakeDepthBufferCopy() const
 {
+	if (UseAppleCoreDepthBufferCopyFallback())
+		return;
+
 	const std::array<int, 4> srcScreenRect = { globalRendering->viewPosX, globalRendering->viewPosY, globalRendering->viewPosX + globalRendering->viewSizeX, globalRendering->viewPosY + globalRendering->viewSizeY };
 	const std::array<int, 4> dstScreenRect = { 0, 0, globalRendering->viewSizeX, globalRendering->viewSizeY };
 
@@ -149,6 +167,6 @@ void DepthBufferCopy::CreateTextureAndFBO(bool ms)
 	depthFBO->Bind();
 	depthFBO->AttachTexture(depthTexture, target, GL_DEPTH_ATTACHMENT);
 	glDrawBuffer(GL_NONE);
-	depthFBO->CheckStatus("DEPTH-BUFFER-COPY-FBO" + ms ? "-MULTISAMPLED" : "");
+	depthFBO->CheckStatus(ms ? "DEPTH-BUFFER-COPY-FBO-MULTISAMPLED" : "DEPTH-BUFFER-COPY-FBO");
 	depthFBO->Unbind();
 }

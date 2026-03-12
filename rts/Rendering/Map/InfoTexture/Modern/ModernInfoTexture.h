@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include <string>
 #include <ranges>
 #include "Rendering/Map/InfoTexture/InfoTexture.h"
 #include "Rendering/GL/PBO.h"
@@ -24,10 +25,11 @@ public:
 protected:
 	bool CreateFBO(const char* fboName);
 	void RunFullScreenPass();
+	void ValidateShaderProgram();
+	static std::string GetShaderVersionDirective();
+	static std::string GetFullscreenTriangleVertexShaderSource();
 protected:
 	FBO fbo;
 	VAO vao;
 	Shader::IProgramObject* shader = nullptr;
-protected:
-	static constexpr const char* vertexCode = "GLSL/FullscreenTriangleVS.glsl";
 };

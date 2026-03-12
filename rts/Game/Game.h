@@ -118,6 +118,8 @@ private:
 	void DrawInputReceivers();
 	void DrawInputText();
 	void DrawInterfaceWidgets();
+	void PrepareValidationRenderCapture();
+	void MaybeRunValidationRenderCapture();
 
 	/// Format and display a chat message received over network
 	void HandleChatMsg(const ChatMessage& msg);
@@ -180,6 +182,10 @@ public:
 	bool showFPS = true;
 	bool showClock = true;
 	bool showSpeed = true;
+	bool validationRenderCapture = false;
+	bool validationRenderCapturePrepared = false;
+	bool validationRenderCaptured = false;
+	int validationRenderCaptureFrame = 30;
 
 	bool skipping = false;
 	bool playing = false;
@@ -233,4 +239,3 @@ private:
 extern CGame* game;
 
 #endif // _GAME_H
-

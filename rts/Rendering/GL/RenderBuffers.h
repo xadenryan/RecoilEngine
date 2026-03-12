@@ -9,8 +9,10 @@
 #include "System/ContainerUtil.h"
 #include "System/Log/ILog.h"
 #include "System/FileSystem/FileHandler.h"
+#include "System/Matrix44f.h"
 #include "Rendering/Shaders/Shader.h"
 #include "Rendering/Shaders/ShaderHandler.h"
+#include "Rendering/GlobalRenderingInfo.h"
 
 #include <fmt/format.h>
 #include <fmt/printf.h>
@@ -130,9 +132,10 @@ public:
 		vertSrc = fmt::sprintf(vertSrc,
 			vsHeader,
 			vsInputs,
+			GetVertexTransformUniform(),
 			varyingsVS,
 			vsAssignment,
-			vsPosVertex
+			GetVertexTransformExpr(vsPosVertex)
 		);
 
 		const std::string fragOutput = GetFragOutput();
@@ -156,7 +159,8 @@ public:
 		shader->Enable();
 		shader->Disable();
 
-		shader->Validate();
+		if (!globalRenderingInfo.glContextIsCore)
+			shader->Validate();
 #ifndef HEADLESS
 		assert(shader->IsValid());
 #endif
@@ -192,7 +196,32 @@ private:
 
 	static const std::string GetFragOutput();
 
+	static std::string GetVertexTransformUniform() {
+		if (globalRenderingInfo.glContextIsCore)
+			return "uniform mat4 transformMatrix = mat4(1.0);";
+
+		return "";
+	}
+
+	static std::string GetVertexTransformExpr(const std::string& vertexExpr) {
+		if (globalRenderingInfo.glContextIsCore)
+			return fmt::format("transformMatrix * {}", vertexExpr);
+
+		return fmt::format("gl_ModelViewProjectionMatrix * {}", vertexExpr);
+	}
+
 	static void GetShaderHeaders(std::string& vsHeader, std::string& fsHeader) {
+		if (globalRenderingInfo.glContextIsCore) {
+			if (globalRendering->supportExplicitAttribLoc) {
+				vsHeader = fmt::format("{}{}{}", "#version 150", nl, "#extension GL_ARB_explicit_attrib_location : require");
+			} else {
+				vsHeader = "#version 150";
+			}
+
+			fsHeader = "#version 150";
+			return;
+		}
+
 		if (globalRendering->supportExplicitAttribLoc) {
 			vsHeader = fmt::format("{}{}{}", "#version 150 compatibility", nl, "#extension GL_ARB_explicit_attrib_location : require");
 		}
@@ -585,6 +614,7 @@ public:
 	void UploadEBO();
 
 	void AssertBoundShader() const;
+	void ApplyTransformUniform() const;
 	void DrawArrays(uint32_t mode, bool rewind = true);
 	void DrawElements(uint32_t mode, bool rewind = true);
 	void DropCurrent();
@@ -855,10 +885,33 @@ inline void TypedRenderBuffer<T>::AssertBoundShader() const
 }
 
 template<typename T>
+inline void TypedRenderBuffer<T>::ApplyTransformUniform() const
+{
+#ifndef HEADLESS
+	if (!globalRenderingInfo.glContextIsCore)
+		return;
+
+	auto* shader = shaderHandler->GetCurrentlyBoundProgram();
+	if (shader == nullptr || !shader->IsValid())
+		return;
+
+	CMatrix44f modelViewMat;
+	CMatrix44f projectionMat;
+
+	glGetFloatv(GL_MODELVIEW_MATRIX, modelViewMat.m);
+	glGetFloatv(GL_PROJECTION_MATRIX, projectionMat.m);
+
+	const CMatrix44f transformMatrix = projectionMat * modelViewMat;
+	shader->SetUniformMatrix4x4("transformMatrix", false, transformMatrix.m);
+#endif
+}
+
+template<typename T>
 inline void TypedRenderBuffer<T>::DrawArrays(uint32_t mode, bool rewind)
 {
 	assert((indcs.size() - eboStartIndex) == 0); //otherwise DrawArrays is an invalid submission type
 	AssertBoundShader();
+	ApplyTransformUniform();
 
 	UploadVBO();
 
@@ -882,6 +935,7 @@ template<typename T>
 inline void TypedRenderBuffer<T>::DrawElements(uint32_t mode, bool rewind)
 {
 	AssertBoundShader();
+	ApplyTransformUniform();
 
 	UploadVBO();
 	UploadEBO();

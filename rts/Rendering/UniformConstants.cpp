@@ -23,7 +23,7 @@
 #include "Map/ReadMap.h"
 #include "System/Log/ILog.h"
 #include "System/SafeUtil.h"
-#include "SDL2/SDL_mouse.h"
+#include <SDL_mouse.h>
 
 CR_BIND(UniformMatricesBuffer, )
 

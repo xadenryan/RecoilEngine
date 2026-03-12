@@ -54,9 +54,7 @@ CHeightTexture::CHeightTexture()
 
 	CreateFBO("CHeightTexture");
 
-	const std::string fragmentCode = R"(
-		#version 130
-
+	const std::string fragmentCode = GetShaderVersionDirective() + R"(
 		uniform sampler2D texHeight;
 		uniform sampler2D texPalette;
 		uniform float paletteOffset;
@@ -72,7 +70,7 @@ CHeightTexture::CHeightTexture()
 	)";
 
 	shader = shaderHandler->CreateProgramObject("[CHeightTexture]", "CHeightTexture");
-	shader->AttachShaderObject(shaderHandler->CreateShaderObject(vertexCode,   "", GL_VERTEX_SHADER));
+	shader->AttachShaderObject(shaderHandler->CreateShaderObject(GetFullscreenTriangleVertexShaderSource(), "", GL_VERTEX_SHADER));
 	shader->AttachShaderObject(shaderHandler->CreateShaderObject(fragmentCode, "", GL_FRAGMENT_SHADER));
 	shader->Link();
 	if (!shader->IsValid()) {
@@ -84,7 +82,7 @@ CHeightTexture::CHeightTexture()
 		shader->SetUniform("texPalette", 1);
 		shader->SetUniform("paletteOffset", configHandler->GetBool("ColorElev") ? 0.0f : 1.0f);
 		shader->Disable();
-		shader->Validate();
+		ValidateShaderProgram();
 		if (!shader->IsValid()) {
 			const char* fmt = "%s-shader validation error: %s";
 			LOG_L(L_ERROR, fmt, shader->GetName().c_str(), shader->GetLog().c_str());

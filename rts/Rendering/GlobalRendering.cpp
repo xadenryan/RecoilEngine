@@ -102,6 +102,75 @@ alignas(CGlobalRendering) static std::byte globalRenderingMem[sizeof(CGlobalRend
 CGlobalRendering* globalRendering = nullptr;
 GlobalRenderingInfo globalRenderingInfo;
 
+namespace {
+
+static bool GLVersionAtLeast(const int2& ctxVersion, const int major, const int minor)
+{
+	return ((ctxVersion.x * 10 + ctxVersion.y) >= (major * 10 + minor));
+}
+
+#if defined(__APPLE__)
+template <typename ExtProc, typename CoreProc>
+static void AssignCoreProcAlias(ExtProc& extProc, CoreProc coreProc)
+{
+	if (extProc == nullptr && coreProc != nullptr)
+		extProc = reinterpret_cast<ExtProc>(coreProc);
+}
+
+static void ApplyAppleCoreProfileAliases(const int2& ctxVersion, const bool isCoreProfile)
+{
+	if (!isCoreProfile)
+		return;
+
+	GLAD_GL_ARB_multitexture               |= GLVersionAtLeast(ctxVersion, 1, 3);
+	GLAD_GL_ARB_texture_compression       |= GLVersionAtLeast(ctxVersion, 1, 3);
+	GLAD_GL_ARB_texture_float             |= GLVersionAtLeast(ctxVersion, 3, 0);
+	GLAD_GL_ARB_texture_non_power_of_two  |= GLVersionAtLeast(ctxVersion, 2, 0);
+	GLAD_GL_ARB_vertex_shader             |= GLVersionAtLeast(ctxVersion, 2, 0);
+	GLAD_GL_ARB_fragment_shader           |= GLVersionAtLeast(ctxVersion, 2, 0);
+	GLAD_GL_ARB_framebuffer_object        |= GLVersionAtLeast(ctxVersion, 3, 0);
+	GLAD_GL_EXT_framebuffer_object        |= GLAD_GL_ARB_framebuffer_object;
+	GLAD_GL_EXT_framebuffer_blit          |= GLVersionAtLeast(ctxVersion, 3, 0);
+	GLAD_GL_EXT_framebuffer_multisample   |= GLVersionAtLeast(ctxVersion, 3, 0);
+
+	if (GLAD_GL_EXT_framebuffer_object) {
+		AssignCoreProcAlias(glad_glIsRenderbufferEXT, glad_glIsRenderbuffer);
+		AssignCoreProcAlias(glad_glBindRenderbufferEXT, glad_glBindRenderbuffer);
+		AssignCoreProcAlias(glad_glDeleteRenderbuffersEXT, glad_glDeleteRenderbuffers);
+		AssignCoreProcAlias(glad_glGenRenderbuffersEXT, glad_glGenRenderbuffers);
+		AssignCoreProcAlias(glad_glRenderbufferStorageEXT, glad_glRenderbufferStorage);
+		AssignCoreProcAlias(glad_glGetRenderbufferParameterivEXT, glad_glGetRenderbufferParameteriv);
+		AssignCoreProcAlias(glad_glIsFramebufferEXT, glad_glIsFramebuffer);
+		AssignCoreProcAlias(glad_glBindFramebufferEXT, glad_glBindFramebuffer);
+		AssignCoreProcAlias(glad_glDeleteFramebuffersEXT, glad_glDeleteFramebuffers);
+		AssignCoreProcAlias(glad_glGenFramebuffersEXT, glad_glGenFramebuffers);
+		AssignCoreProcAlias(glad_glCheckFramebufferStatusEXT, glad_glCheckFramebufferStatus);
+		AssignCoreProcAlias(glad_glFramebufferTexture1DEXT, glad_glFramebufferTexture1D);
+		AssignCoreProcAlias(glad_glFramebufferTexture2DEXT, glad_glFramebufferTexture2D);
+		AssignCoreProcAlias(glad_glFramebufferTexture3DEXT, glad_glFramebufferTexture3D);
+		AssignCoreProcAlias(glad_glFramebufferRenderbufferEXT, glad_glFramebufferRenderbuffer);
+		AssignCoreProcAlias(glad_glGetFramebufferAttachmentParameterivEXT, glad_glGetFramebufferAttachmentParameteriv);
+	}
+
+	if (GLAD_GL_EXT_framebuffer_blit)
+		AssignCoreProcAlias(glad_glBlitFramebufferEXT, glad_glBlitFramebuffer);
+
+	if (GLAD_GL_EXT_framebuffer_multisample)
+		AssignCoreProcAlias(glad_glRenderbufferStorageMultisampleEXT, glad_glRenderbufferStorageMultisample);
+}
+#endif
+
+static bool NeedsLegacyTextureEnvCombine(const bool isCoreProfile)
+{
+#if defined(__APPLE__)
+	return !isCoreProfile;
+#else
+	return true;
+#endif
+}
+
+}
+
 
 CR_BIND(CGlobalRendering, )
 
@@ -464,7 +533,8 @@ SDL_GLContext CGlobalRendering::CreateGLContext(const int2& minCtx)
 	SDL_GLContext newContext = nullptr;
 
 	constexpr int2 glCtxs[] = {{2, 0}, {2, 1},  {3, 0}, {3, 1}, {3, 2}, {3, 3},  {4, 0}, {4, 1}, {4, 2}, {4, 3}, {4, 4}, {4, 5}, {4, 6}};
-	          int2 cmpCtx;
+	int2 cmpCtx = {0, 0};
+	int2 coreCtx = {0, 0};
 
 	if (std::find(&glCtxs[0], &glCtxs[0] + (sizeof(glCtxs) / sizeof(int2)), minCtx) == (&glCtxs[0] + (sizeof(glCtxs) / sizeof(int2)))) {
 		handleerror(nullptr, "illegal OpenGL context-version specified, aborting", "ERROR", MBF_OK | MBF_EXCL);
@@ -493,6 +563,8 @@ SDL_GLContext CGlobalRendering::CreateGLContext(const int2& minCtx)
 				// save the lowest successfully created fallback compatibility-context
 				if (mask == SDL_GL_CONTEXT_PROFILE_COMPATIBILITY && cmpCtx.x == 0 && tmpCtx.x >= minCtx.x)
 					cmpCtx = tmpCtx;
+				if (mask == SDL_GL_CONTEXT_PROFILE_CORE && coreCtx.x == 0 && tmpCtx.x >= minCtx.x)
+					coreCtx = tmpCtx;
 
 				LOG_L(L_WARNING, frmts[true], __func__, tmpCtx.x, tmpCtx.y, profs[mask == SDL_GL_CONTEXT_PROFILE_CORE]);
 			}
@@ -502,17 +574,42 @@ SDL_GLContext CGlobalRendering::CreateGLContext(const int2& minCtx)
 		}
 	}
 
-	if (cmpCtx.x == 0) {
+	#if defined(__APPLE__)
+	const bool allowCoreFallback = true;
+	#else
+	const bool allowCoreFallback = (forceCoreContext != 0);
+	#endif
+
+	const bool useCoreFallback = (cmpCtx.x == 0 && allowCoreFallback && coreCtx.x != 0);
+
+	if (cmpCtx.x == 0 && !useCoreFallback) {
 		handleerror(nullptr, buf, "ERROR", MBF_OK | MBF_EXCL);
 		return nullptr;
 	}
 
-	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, cmpCtx.x);
-	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, cmpCtx.y);
-	SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_COMPATIBILITY);
+	const int2 selectedCtx = useCoreFallback ? coreCtx : cmpCtx;
+	const uint32_t selectedProfile = useCoreFallback ? SDL_GL_CONTEXT_PROFILE_CORE : SDL_GL_CONTEXT_PROFILE_COMPATIBILITY;
+
+	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, selectedCtx.x);
+	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, selectedCtx.y);
+	SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, selectedProfile);
 
 	// should never fail at this point
-	return (newContext = SDL_GL_CreateContext(sdlWindow));
+	if ((newContext = SDL_GL_CreateContext(sdlWindow)) == nullptr) {
+		handleerror(nullptr, SDL_GetError(), "ERROR", MBF_OK | MBF_EXCL);
+		return nullptr;
+	}
+
+	if (useCoreFallback) {
+		LOG_L(L_WARNING,
+			"[GR::%s] using main GL%d.%d core-context because compatibility-context creation is unavailable on this platform",
+			__func__,
+			selectedCtx.x,
+			selectedCtx.y
+		);
+	}
+
+	return newContext;
 }
 
 bool CGlobalRendering::CreateWindowAndContext(const char* title)
@@ -787,7 +884,8 @@ void CGlobalRendering::CheckGLExtensions()
 	char* ptr = &extMsg[0];
 
 	if (!GLAD_GL_ARB_multitexture       ) ptr += snprintf(ptr, sizeof(extMsg) - (ptr - extMsg), " multitexture ");
-	if (!GLAD_GL_ARB_texture_env_combine) ptr += snprintf(ptr, sizeof(extMsg) - (ptr - extMsg), " texture_env_combine ");
+	if (!GLAD_GL_ARB_texture_env_combine && NeedsLegacyTextureEnvCombine(globalRenderingInfo.glContextIsCore))
+		ptr += snprintf(ptr, sizeof(extMsg) - (ptr - extMsg), " texture_env_combine ");
 	if (!GLAD_GL_ARB_texture_compression) ptr += snprintf(ptr, sizeof(extMsg) - (ptr - extMsg), " texture_compression ");
 	if (!GLAD_GL_ARB_texture_float)       ptr += snprintf(ptr, sizeof(extMsg) - (ptr - extMsg), " texture_float ");
 	if (!GLAD_GL_ARB_texture_non_power_of_two) ptr += snprintf(ptr, sizeof(extMsg) - (ptr - extMsg), " texture_non_power_of_two ");
@@ -1885,6 +1983,10 @@ bool CGlobalRendering::CheckGLContextVersion(const int2& minCtx) const
 
 	// keep this for convenience
 	globalRenderingInfo.glContextVersion = tmpCtx;
+
+	#if defined(__APPLE__)
+	ApplyAppleCoreProfileAliases(tmpCtx, globalRenderingInfo.glContextIsCore);
+	#endif
 
 	// compare major * 10 + minor s.t. 4.1 evaluates as larger than 3.2
 	return ((tmpCtx.x * 10 + tmpCtx.y) >= (minCtx.x * 10 + minCtx.y));

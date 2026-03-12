@@ -29,7 +29,7 @@ public:
 	bool IsValid(bool ms) const;
 
 	void MakeDepthBufferCopy() const;
-	uint32_t GetDepthBufferTexture(bool ms) const { return depthTextures[ms]; }
+	uint32_t GetDepthBufferTexture(bool ms) const { return IsValid(ms) ? depthTextures[ms] : 0u; }
 private:
 	// to be accessed with ScopedDepthBufferCopy
 	void AddConsumer(bool ms);

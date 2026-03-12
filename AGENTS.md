@@ -15,6 +15,68 @@ When adapting build or test commands for this host, prefer Apple Silicon-compati
 
 This machine is still being brought up for RecoilEngine development. The current project status is that we are in the process of getting the game building and running successfully on this MacBook Pro.
 
+Current verified Apple Silicon status on this machine:
+
+- `engine-dedicated` builds and passes the isolated blank-map smoke
+- `engine-headless` builds and passes the isolated blank-map smoke
+- `engine-legacy` now builds as a native `arm64` Mach-O executable
+- `engine-legacy` now passes the isolated blank-map GUI smoke in a visible macOS desktop session
+- `test/validation/run-legacy-render-smoke.sh` now captures a deterministic validation frame from the native macOS legacy client, and a repeat capture matches the current baseline through `test/validation/compare-render-images.sh`
+- the modern info-texture path now uses a localized GLSL-version adapter so its core-safe fullscreen shaders can promote from GLSL 1.30 to 1.50 when the macOS client is forced onto an OpenGL core profile
+- native graphical-client runtime verification beyond the current blank-map startup and render-capture harness is still in progress because SDL requires a macOS session with visible displays and broader renderer parity work remains
+
+## Apple Silicon Dependency Bootstrap
+
+Record every host dependency required to build RecoilEngine on Apple Silicon macOS as it is discovered. Do not leave this implicit in terminal history.
+
+### Required Apple toolchain on this machine
+
+- Full Xcode selected via `xcode-select`:
+  `/Applications/Xcode.app/Contents/Developer`
+- Apple Clang:
+  `Apple clang version 17.0.0 (clang-1700.6.4.2)`
+- CMake:
+  `cmake version 4.2.3`
+
+If another Apple Silicon machine uses a different Xcode, Clang, or CMake baseline during bring-up, record the exact versions here in the same change set.
+
+### Current Homebrew bootstrap command
+
+```bash
+brew install sdl2 freetype fontconfig libogg libvorbis pkgconf devil sevenzip openal-soft
+```
+
+### Current Homebrew packages verified on this machine
+
+- `sdl2 2.32.10`
+- `freetype 2.14.2`
+- `fontconfig 2.17.1`
+- `libogg 1.3.6`
+- `libvorbis 1.3.7`
+- `pkgconf 2.5.1`
+- `devil 1.8.0_6`
+- `sevenzip 26.00`
+- `openal-soft 1.25.1`
+
+### Dependency notes
+
+- `devil` is required when configuring the shared graphical or headless build graph on this machine
+- `sevenzip` is required for `cont/base` archive generation during the current headless build flow
+- Homebrew currently provides the SevenZip executable as `7zz`, so the build system must not assume only `7z` or `7za`
+- `sdl2`, `freetype`, `fontconfig`, `libogg`, `libvorbis`, and `pkgconf` are part of the current macOS bootstrap surface and should be installed before debugging higher-level build failures
+- `openal-soft` is required for the current native macOS graphical-client bring-up because Apple-provided `OpenAL.framework` does not expose the EFX surface the current sound implementation expects
+- automated render comparison currently relies on the macOS-provided `sips` binary; on this macOS 26.3.1 host `sips` cannot emit PPM, so `test/validation/compare-render-images.sh` must normalize images to TIFF instead
+
+### Known runtime environment requirements
+
+- X11 or XQuartz is no longer required for the current native macOS client configure and build path; GLX and X11 linkage are now scoped to non-Apple Unix targets
+- Native graphical-client smoke requires a macOS session with visible desktop displays; when AppKit and SDL both report zero displays, the client aborts before OpenGL initialization with `The video driver did not add any displays`
+- The current isolated native legacy-client smoke must stage `cont/fonts` into the isolation dir as `fonts/`, or the client will fail during early UI and font initialization
+- The current isolated native legacy-client smoke must set `ForceCoreContext = 1` in a flat `springsettings.cfg` because the Apple OpenGL path on this machine does not provide a higher-version compatibility context during SDL context creation
+- The current isolated native legacy render-validation smoke also depends on the automation-only config keys `ValidationRenderCapture = 1` and `ValidationRenderCaptureFrame = 30` to trigger the engine-side screenshot hook at a deterministic frame
+- `SDL_VIDEODRIVER=offscreen` is not a substitute for a real GUI session on this machine: SDL reports a synthetic `1024x768` mode, but `CreateSDLWindow` still fails with `Could not initialize OpenGL / GLES library`
+- If additional host tools or launch-context requirements are discovered for GUI validation on other Apple Silicon machines, add the exact steps here immediately
+
 Current native macOS bring-up work should treat GitHub issue `#936` as required historical context:
 
 - Reference: `https://github.com/beyond-all-reason/RecoilEngine/issues/936`
@@ -66,14 +128,21 @@ Current Apple Silicon phase-1 progress on this machine has moved beyond planning
 ### Verified current status
 
 - Native macOS `arm64` CMake configure succeeds for a dedicated-only build on this MacBook Pro
+- `engine-headless` now builds as a native Apple Silicon Mach-O executable on this machine
 - `engine-dedicated` now builds as a native Apple Silicon Mach-O executable on this machine
+- `engine-legacy` now builds as a native Apple Silicon Mach-O executable on this machine
 - Native targeted math-adjacent test executables `test_Matrix44f` and `test_Float3` both build and pass on this machine
+- Native headless runtime smoke gets through script parsing, blank-map generation, archive checksum acquisition, local server startup, and demo recording in an isolated macOS data dir
 - Native dedicated runtime smoke now gets through script parsing, blank-map generation, archive checksum acquisition, UDP socket bind, server startup, and demo recording in an isolated macOS data dir
+- Native legacy blank-map GUI smoke now gets through SDL init, OpenGL init, demo recording, and the configured stabilization window in an isolated macOS data dir
+- Native legacy render-validation smoke now captures a blank-map screenshot and a repeat capture matches the current baseline image through `test/validation/compare-render-images.sh`
 
 ### Current phase-1 limitations
 
 - Streflop is currently disabled for the native Apple Silicon dedicated-only bring-up path, so multiplayer determinism is not yet validated and phase 1 must not be treated as sync-safe completion
-- This is a non-graphical milestone only; the native macOS graphical client remains a later effort
+- The native macOS graphical client now builds, but automated runtime smoke still requires an interactive macOS desktop session with visible displays; in the current automation context even `launchctl bsexec` against the Aqua login session can still fail before OpenGL initialization with `The video driver did not add any displays`
+- The current Apple core-profile client path still has known rendering gaps after startup, including the optional uniform-constant UBO path, sky shader parity, and other compatibility-profile shader surfaces that have not been fully modernized yet
+- The current automated render-parity proof only covers the blank-map fixture used by `test/validation/run-legacy-render-smoke.sh`; it is a narrow regression harness, not yet a substitute for broader gameplay or replay-based graphical parity testing
 - The legacy benchmark script at `tools/benchmark/script_benchmark.txt` is not a valid Apple Silicon dedicated smoke target because it assumes external game, map, and AI content that is not part of this phase-1 fixture
 
 ## Dedicated Smoke Verification Contract
@@ -105,14 +174,137 @@ The current dedicated smoke-test story for Apple Silicon should stay additive an
 ### Automation hook
 
 - Prefer `test/validation/run-dedicated-blank-smoke.sh` for repeatable native dedicated smoke validation on this machine instead of rebuilding the isolated fixture by hand each time
+- The smoke entrypoint auto-bootstraps through `test/validation/run-smoke-wrapper.sh`, which records a pre-run process baseline, suppresses newly spawned `ReportCrash` and `CrashReporterSupportHelper` helper processes while the smoke is running, and kills only newly spawned `spring`, `spring-dedicated`, `spring-headless`, `ReportCrash`, and `CrashReporterSupportHelper` processes on exit so failed smoke runs do not leave behind engine processes or crash dialogs
 
 ### Important implementation note
 
 - Dedicated blank-map startup must mirror the existing `PreGame` behavior rather than requiring a separate map fixture; if that path regresses, fix the dedicated startup path instead of weakening the smoke test
 
+## Legacy Client Smoke Verification Contract
+
+The current macOS graphical-client smoke-test story should stay additive and hermetic in the same way as the dedicated and headless bring-up.
+
+### Required smoke-test shape
+
+- Use `--isolation` with a temporary or fixture data directory
+- Stage the same minimal base and game fixture used by the dedicated and headless Apple Silicon smoke tests
+- Start the client in background windowed mode so SDL and the OpenGL path still initialize without making fullscreen assumptions about the host session
+- Use a blank-map start script with `InitBlank=1` and `OnlyLocal=1`
+
+### Smoke pass criteria
+
+- The infolog includes:
+ - `SDL version :`
+ - `GL version  :`
+ - `Initialized OpenGL Context:`
+  - `[PreGame::GameDataReceived] recording demo to`
+- The process remains alive for the configured stabilization window after those markers appear
+- The infolog does not contain `Fatal: [ExitSpringProcess]`, `Segmentation fault`, or `caught opengl_error`
+- A demo file is created in the isolated data dir
+
+### Automation hook
+
+- Prefer `test/validation/run-legacy-blank-smoke.sh` for repeatable native client smoke validation on this machine
+- The smoke entrypoint auto-bootstraps through `test/validation/run-smoke-wrapper.sh`, which records a pre-run process baseline, suppresses newly spawned `ReportCrash` and `CrashReporterSupportHelper` helper processes while the smoke is running, and kills only newly spawned `spring`, `spring-dedicated`, `spring-headless`, `ReportCrash`, and `CrashReporterSupportHelper` processes on exit so failed smoke runs do not leave behind engine processes or crash dialogs
+- When the smoke is launched from macOS automation outside an interactive desktop session, it may still fail before OpenGL init if AppKit and SDL both report zero displays; treat that as a launch-context limitation unless the same failure reproduces in a normal GUI session
+- The smoke fixture must stage `fonts/` and a flat `springsettings.cfg` with `ForceCoreContext = 1`; do not silently remove either requirement without replacing it with a verified native compatibility-context path
+- The smoke harness should only report success after the client stays alive long enough to prove it did not just write a demo and immediately crash
+
+## Legacy Render Validation Contract
+
+The current render-validation path is a narrow graphical regression harness for the native macOS client. It is intended to support incremental Apple Silicon bring-up without pretending to prove full gameplay rendering parity yet.
+
+### Required smoke-test shape
+
+- Use the same isolated blank-map fixture and minimal local game archive pattern as the dedicated, headless, and legacy blank-map smoke tests
+- Set `ForceCoreContext = 1` in the isolated `springsettings.cfg` until a verified native compatibility-context path exists on macOS
+- Enable the automation-only config keys `ValidationRenderCapture = 1` and `ValidationRenderCaptureFrame = 30`
+- Run from a visible macOS desktop session so SDL can create the window and OpenGL context
+
+### Current engine-side validation hook
+
+- `ValidationRenderCapture` currently hides the interface, disables clock, FPS, and speed overlays, moves the active camera to the blank-map center, captures a screenshot at the configured frame, and then requests a clean shutdown
+- `SpringApp::Reload()` and `SpringApp::Kill()` must wait for pending screenshot writes before tearing down the thread pool so validation exits with a fully written PNG instead of a truncated file
+
+### Pass criteria
+
+- A PNG screenshot is written into the isolated `screenshots/` directory
+- When a reference image is provided, `test/validation/compare-render-images.sh` prints `Render images match.`
+- The smoke wrapper leaves no newly spawned `spring*` or crash-helper processes behind after the run
+
+### Automation hook
+
+- Prefer `test/validation/run-legacy-render-smoke.sh` for repeatable native render validation on this machine
+- Pass an optional second argument pointing at a known-good reference image when checking graphical parity for the current blank-map fixture
+- `test/validation/compare-render-images.sh` currently normalizes both images to TIFF via macOS `sips` and expects exact byte equality after normalization; if a future stage requires tolerances, document the accepted tolerance and reason in this file before relaxing the check
+
 ## Apple Silicon Porting Principles
 
 Apple Silicon and native macOS support should be implemented as an additive, maintainable extension of the current codebase. Do not degrade existing Linux, Windows, or x86_64 behavior in order to make the new port work.
+
+### Required documentation for temporary disables
+
+Any Apple Silicon or macOS-specific disable, fallback, stub, or feature reduction must be recorded in this file immediately when it is introduced or discovered.
+
+Each entry must capture:
+
+- what was disabled, narrowed, or stubbed
+- whether it is compile-time, link-time, startup, runtime, rendering, sound, or determinism related
+- why the disable currently exists on Apple Silicon or macOS
+- what verification impact it has
+- what the intended exit criteria are for replacing the disable with a proper implementation
+
+Do not silently disable subsystems just to get a build through. If a temporary disable is unavoidable, document it here in the same change set.
+
+### Current documented Apple-specific disables and stubs
+
+- Determinism:
+  streflop is currently disabled for the native Apple Silicon bring-up path.
+  Why: the current `arm64` build path is being brought up first, and sync-safe floating-point behavior has not been re-established yet.
+  Verification impact: successful builds and smokes do not currently imply multiplayer or replay determinism.
+  Exit criteria: restore an `arm64`-safe determinism path and validate it with replay or sync-hash checks before treating Apple Silicon as sync-safe.
+
+- Input and cursor handling:
+  `rts/Game/UI/HwMouseCursor.cpp` uses the `HardwareCursorApple` stub on macOS, so native hardware cursor support is currently unavailable on this platform path.
+  Why: the Apple-specific hardware cursor implementation has not been ported yet.
+  Verification impact: graphical validation does not currently prove hardware cursor parity with existing Linux or Windows behavior.
+  Exit criteria: replace the stub with a native macOS cursor implementation or a verified SDL-backed adapter that preserves expected cursor behavior.
+
+- OpenGL context creation:
+  the native macOS client currently falls back to an Apple core-profile context when SDL cannot create a compatibility-profile context at or above the requested version.
+  Why: on this machine, Apple exposes usable higher-version core contexts but does not provide a matching compatibility context during the legacy client bring-up path.
+  Verification impact: passing the graphical smoke now proves the additive Apple core-profile translation path works far enough to start the client, not that macOS provides the same compatibility-profile behavior as Linux or Windows.
+  Exit criteria: either restore a verified compatibility-context path on macOS or complete enough renderer modernization that the native client no longer depends on compatibility-context-only behavior.
+
+- Legacy OpenGL extension gate:
+  the native macOS client currently waives the hard startup requirement for `GL_ARB_texture_env_combine` during Apple core-profile bring-up.
+  Why: Apple core-profile contexts do not advertise the legacy compatibility extension string even though the porting work is trying to translate or bypass those legacy assumptions incrementally.
+  Verification impact: a successful startup no longer proves parity for every fixed-function texture-env path that older compatibility renderers relied on.
+  Exit criteria: remove the waiver once the remaining fixed-function and compatibility-only texture environment assumptions are eliminated or replaced with a verified modern equivalent.
+
+- Uniform-constant shader path:
+  `UniformConstants::Init()` can currently decline to initialize on the Apple core-profile path when `GL_ARB_uniform_buffer_object` or `GL_ARB_shading_language_420pack` are unavailable.
+  Why: the current renderer still expects the legacy ARB capability and GLSL layout surface, while the Apple OpenGL stack can expose an incomplete subset for this path.
+  Verification impact: client startup and smoke progress do not yet prove parity for the UBO-backed uniform-constant path on Apple Silicon.
+  Exit criteria: provide a verified Apple-safe UBO and GLSL path or add a compatibility adapter that preserves the existing renderer behavior without relying on unsupported extension semantics.
+
+- Sky rendering:
+  `ISky::SetSky` can currently fail to create `ModernSky` on the Apple core-profile path and fall back to `NullSky`.
+  Why: the current sky shader stack still depends on GLSL and profile assumptions that are not yet fully adapted for Apple core-profile execution.
+  Verification impact: successful client startup does not currently prove sky rendering parity with existing Linux or Windows builds.
+  Exit criteria: make the sky shaders compile and render correctly on the Apple core-profile path, then verify the output against a known-good baseline before removing the fallback note.
+
+- Dynamic model lights:
+  the Apple core-profile bridge currently forces `MAX_DYNAMIC_MODEL_LIGHTS` to `0` for the legacy GLSL model shader path.
+  Why: the original model shaders depend on `gl_LightSource` fixed-function GLSL state, and the current additive bridge is reusing the existing VAO path plus per-draw matrix uploads before a proper dynamic-light uniform adapter is in place.
+  Verification impact: successful client startup and rendering smoke do not currently prove parity for dynamic per-model light contributions on Apple Silicon or macOS core-profile contexts.
+  Exit criteria: add a verified shader-uniform adapter for model dynamic lights, compare rendered output against an existing supported build, and remove the temporary zero-light fallback.
+
+- Depth-buffer copy:
+  `DepthBufferCopy` currently reports itself unusable and skips `MakeDepthBufferCopy()` on the Apple core-profile path.
+  Why: the current macOS core-profile bring-up reaches a hard crash inside `FBO::Blit` while copying the main depth buffer into the depth-copy FBO, so the unsafe blit path is being isolated instead of forcing a brittle framebuffer workaround into shared rendering code.
+  Verification impact: successful Apple Silicon client smoke does not currently prove parity for depth-texture consumers such as soft projectile effects or depth-aware ground decals on the native macOS path.
+  Exit criteria: replace the Apple-specific skip with a verified depth-copy implementation on macOS core-profile contexts and validate the affected rendering paths against an existing supported build.
 
 ### Required implementation approach
 

@@ -13,6 +13,7 @@
 #include "Rendering/Env/SkyLight.h"
 #include "Rendering/GL/GeometryBuffer.h"
 #include "Rendering/GL/myGL.h"
+#include "Rendering/GlobalRenderingInfo.h"
 #include "Rendering/Common/ModelDrawerHelpers.h"
 #include "Rendering/Shaders/ShaderHandler.h"
 #include "Rendering/Shaders/Shader.h"
@@ -113,12 +114,27 @@ CModelDrawerStateGLSL::CModelDrawerStateGLSL()
 		"ModelShaderGLSL-NoShadowDeferred",
 		"ModelShaderGLSL-ShadowedDeferred",
 	};
+	const bool useAppleCoreProfileAdapter = globalRenderingInfo.glContextIsCore && globalRenderingInfo.glslVersionNum >= 150;
+	const unsigned int maxDynamicModelLights = useAppleCoreProfileAdapter ? 0 : lightHandler->GetMaxLights();
 	const std::string extraDefs =
+		(useAppleCoreProfileAdapter ? std::string("#version 150\n#define RECOIL_CORE_PROFILE_MODEL 1\n") : std::string()) +
 		("#define BASE_DYNAMIC_MODEL_LIGHT " + IntToString(lightHandler->GetBaseLight()) + "\n") +
-		("#define MAX_DYNAMIC_MODEL_LIGHTS " + IntToString(lightHandler->GetMaxLights()) + "\n");
+		("#define MAX_DYNAMIC_MODEL_LIGHTS " + IntToString(maxDynamicModelLights) + "\n");
 
 	for (uint32_t n = MODEL_SHADER_NOSHADOW_STANDARD; n <= MODEL_SHADER_SHADOWED_DEFERRED; n++) {
 		modelShaders[n] = sh->CreateProgramObject(PO_CLASS, shaderNames[n]);
+		if (useAppleCoreProfileAdapter) {
+			modelShaders[n]->BindAttribLocation("vertexPos", 0);
+			modelShaders[n]->BindAttribLocation("vertexNormal", 1);
+			modelShaders[n]->BindAttribLocation("vertexUV", 4);
+			modelShaders[n]->BindOutputLocation("fragColor", 0);
+			modelShaders[n]->BindOutputLocation("fragDataNorm", GL::GeometryBuffer::ATTACHMENT_NORMTEX);
+			modelShaders[n]->BindOutputLocation("fragDataDiff", GL::GeometryBuffer::ATTACHMENT_DIFFTEX);
+			modelShaders[n]->BindOutputLocation("fragDataSpec", GL::GeometryBuffer::ATTACHMENT_SPECTEX);
+			modelShaders[n]->BindOutputLocation("fragDataEmit", GL::GeometryBuffer::ATTACHMENT_EMITTEX);
+			modelShaders[n]->BindOutputLocation("fragDataMisc", GL::GeometryBuffer::ATTACHMENT_MISCTEX);
+		}
+
 		modelShaders[n]->AttachShaderObject(sh->CreateShaderObject("GLSL/ModelVertProg.glsl", extraDefs, GL_VERTEX_SHADER));
 		modelShaders[n]->AttachShaderObject(sh->CreateShaderObject("GLSL/ModelFragProg.glsl", extraDefs, GL_FRAGMENT_SHADER));
 
@@ -153,7 +169,8 @@ CModelDrawerStateGLSL::CModelDrawerStateGLSL()
 		modelShaders[n]->SetUniformMatrix4x4("shadowMatrix", false, shadowHandler.GetShadowMatrixRaw());
 
 		modelShaders[n]->Disable();
-		modelShaders[n]->Validate();
+		if (!useAppleCoreProfileAdapter)
+			modelShaders[n]->Validate();
 	}
 
 	// make the active shader non-NULL
@@ -201,6 +218,7 @@ void CModelDrawerStateGLSL::Enable(bool deferredPass, bool alphaPass) const
 	// end of EnableCommon();
 
 	modelShader->SetUniform3v("sunDir", &ISky::GetSky()->GetLight()->GetLightDir().x);
+	modelShader->SetUniform3v("cameraPos", &camera->GetPos()[0]);
 	modelShader->SetUniform3v("sunAmbient", &sunLighting->modelAmbientColor[0]);
 	modelShader->SetUniform3v("sunDiffuse", &sunLighting->modelDiffuseColor[0]);
 	modelShader->SetUniform3v("sunSpecular", &sunLighting->modelSpecularColor[0]);

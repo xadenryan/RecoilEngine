@@ -13,7 +13,9 @@
 #undef KeyRelease
 #else
 #include <unistd.h> // isatty
+#if !(defined(__APPLE__) || defined(HEADLESS)) || defined(__OpenBSD__)
 #include <X11/Xlib.h> // XInitThreads
+#endif
 
 #undef KeyPress
 #undef KeyRelease
@@ -51,6 +53,7 @@
 #include "Rendering/Fonts/glFont.h"
 #include "Rendering/GL/FBO.h"
 #include "Rendering/Models/ModelsMemStorage.h"
+#include "Rendering/Screenshot.h"
 #include "Rendering/GL/RenderBuffers.h"
 #include "Rendering/Shaders/ShaderHandler.h"
 #include "Rendering/Textures/Bitmap.h"
@@ -747,6 +750,8 @@ void SpringApp::Reload(const std::string script)
 {
 	LOG("[SpringApp::%s][1]", __func__);
 
+	WaitForPendingScreenshotWrites();
+
 	// get rid of any running worker threads
 	ThreadPool::SetThreadCount(0);
 	ThreadPool::SetDefaultThreadCount();
@@ -992,6 +997,7 @@ void SpringApp::Kill(bool fromRun)
 	killedCount += 1;
 
 	LOG("[SpringApp::%s][1] fromRun=%d", __func__, fromRun);
+	WaitForPendingScreenshotWrites();
 	ThreadPool::SetThreadCount(0);
 	LOG("[SpringApp::%s][2]", __func__);
 	LuaVFSDownload::Free(true);

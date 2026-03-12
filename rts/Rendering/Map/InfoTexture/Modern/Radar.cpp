@@ -32,9 +32,7 @@ CRadarTexture::CRadarTexture()
 
 	CreateFBO("CRadarTexture");
 
-	const std::string fragmentCode = R"(
-		#version 130
-
+	const std::string fragmentCode = GetShaderVersionDirective() + R"(
 		uniform sampler2D texLoS;
 		uniform sampler2D texRadar;
 		uniform sampler2D texJammer;
@@ -56,7 +54,7 @@ CRadarTexture::CRadarTexture()
 	)";
 
 	shader = shaderHandler->CreateProgramObject("[CRadarTexture]", "CRadarTexture");
-	shader->AttachShaderObject(shaderHandler->CreateShaderObject(vertexCode,   "", GL_VERTEX_SHADER));
+	shader->AttachShaderObject(shaderHandler->CreateShaderObject(GetFullscreenTriangleVertexShaderSource(), "", GL_VERTEX_SHADER));
 	shader->AttachShaderObject(shaderHandler->CreateShaderObject(fragmentCode, "", GL_FRAGMENT_SHADER));
 	shader->Link();
 	if (!shader->IsValid()) {
@@ -68,7 +66,7 @@ CRadarTexture::CRadarTexture()
 		shader->SetUniform("texJammer", 0);
 		shader->SetUniform("texLoS",    2);
 		shader->Disable();
-		shader->Validate();
+		ValidateShaderProgram();
 		if (!shader->IsValid()) {
 			const char* fmt = "%s-shader validation error: %s";
 			LOG_L(L_ERROR, fmt, shader->GetName().c_str(), shader->GetLog().c_str());

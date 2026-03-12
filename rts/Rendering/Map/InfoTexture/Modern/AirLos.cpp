@@ -29,9 +29,7 @@ CAirLosTexture::CAirLosTexture()
 
 	CreateFBO("CAirLosTexture");
 
-	const std::string fragmentCode = R"(
-		#version 130
-
+	const std::string fragmentCode = GetShaderVersionDirective() + R"(
 		uniform sampler2D tex0;
 
 		in vec2 uv;
@@ -45,7 +43,7 @@ CAirLosTexture::CAirLosTexture()
 	)";
 
 	shader = shaderHandler->CreateProgramObject("[CAirLosTexture]", "CAirLosTexture");
-	shader->AttachShaderObject(shaderHandler->CreateShaderObject(vertexCode,   "", GL_VERTEX_SHADER));
+	shader->AttachShaderObject(shaderHandler->CreateShaderObject(GetFullscreenTriangleVertexShaderSource(), "", GL_VERTEX_SHADER));
 	shader->AttachShaderObject(shaderHandler->CreateShaderObject(fragmentCode, "", GL_FRAGMENT_SHADER));
 	shader->Link();
 	if (!shader->IsValid()) {
@@ -55,7 +53,7 @@ CAirLosTexture::CAirLosTexture()
 		shader->Enable();
 		shader->SetUniform("tex0", 0);
 		shader->Disable();
-		shader->Validate();
+		ValidateShaderProgram();
 		if (!shader->IsValid()) {
 			const char* fmt = "%s-shader validation error: %s";
 			LOG_L(L_ERROR, fmt, shader->GetName().c_str(), shader->GetLog().c_str());

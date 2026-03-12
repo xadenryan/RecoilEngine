@@ -124,6 +124,16 @@ set(IL_FOUND ${DevIL_FOUND})
 
 # create imported targets ONLY if we found DevIL.
 if(DevIL_FOUND)
+  set(DevIL_INTERFACE_INCLUDE_DIRS "${IL_INCLUDE_DIR}")
+
+  get_filename_component(IL_INCLUDE_DIR_NAME "${IL_INCLUDE_DIR}" NAME)
+  if(IL_INCLUDE_DIR_NAME STREQUAL "IL")
+    get_filename_component(IL_INCLUDE_PARENT_DIR "${IL_INCLUDE_DIR}" DIRECTORY)
+    list(APPEND DevIL_INTERFACE_INCLUDE_DIRS "${IL_INCLUDE_PARENT_DIR}")
+  endif()
+
+  list(REMOVE_DUPLICATES DevIL_INTERFACE_INCLUDE_DIRS)
+
   # Report the ILUT found if ILUT_LIBRARIES contains valid path.
   if (ILUT_LIBRARIES)
     set(DevIL_ILUT_FOUND TRUE)
@@ -134,7 +144,7 @@ if(DevIL_FOUND)
   if(NOT TARGET DevIL::IL)
     add_library(DevIL::IL UNKNOWN IMPORTED)
     set_target_properties(DevIL::IL PROPERTIES
-                          INTERFACE_INCLUDE_DIRECTORIES "${IL_INCLUDE_DIR}"
+                          INTERFACE_INCLUDE_DIRECTORIES "${DevIL_INTERFACE_INCLUDE_DIRS}"
                           IMPORTED_LOCATION "${IL_LIBRARIES}")
     
     if(PREFER_STATIC_LIBS)

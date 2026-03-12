@@ -6,6 +6,7 @@
 #include "Rendering/Shaders/GLSLCopyState.h"
 #include "Rendering/GL/myGL.h"
 #include "Rendering/GlobalRendering.h"
+#include "Rendering/GlobalRenderingInfo.h"
 
 #include "System/SafeUtil.h"
 #include "System/StringUtil.h"
@@ -98,6 +99,38 @@ static bool ExtractGlslVersion(std::string* src, std::string* version)
 	return false;
 }
 
+static int ParseGlslVersionNumber(const std::string& version)
+{
+	const auto pos = version.find("#version ");
+
+	if (pos == std::string::npos)
+		return 0;
+
+	const auto numPos = pos + 9;
+	const auto numEnd = version.find_first_not_of("0123456789", numPos);
+
+	if (numPos == numEnd)
+		return 0;
+
+	return std::stoi(version.substr(numPos, numEnd - numPos));
+}
+
+static void NormalizeGlslVersionForContext(std::string* version)
+{
+	if (version->empty() || !globalRenderingInfo.glContextIsCore)
+		return;
+
+	const int requestedVersion = ParseGlslVersionNumber(*version);
+
+	if (requestedVersion == 0)
+		return;
+
+	// Apple core-profile contexts reject several GLSL 130 shaders even though the
+	// same source is otherwise compatible with a 150+ core pipeline.
+	if (requestedVersion == 130 && globalRenderingInfo.glslVersionNum >= 150)
+		*version = "#version 150\n";
+}
+
 /*****************************************************************/
 
 
@@ -183,6 +216,7 @@ namespace Shader {
 		// version pragma in definitions overrides version pragma in source (if any)
 		ExtractGlslVersion(&sourceStr, &versionStr);
 		ExtractGlslVersion(&defFlags,  &versionStr);
+		NormalizeGlslVersionForContext(&versionStr);
 
 		if (!versionStr.empty()) EnsureEndsWith(&versionStr, "\n");
 		if (!defFlags.empty())   EnsureEndsWith(&defFlags,   "\n");

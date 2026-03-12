@@ -6,5 +6,6 @@
 #include <string>
 
 void TakeScreenshot(std::string type, unsigned quality);
+void WaitForPendingScreenshotWrites();
 
 #endif

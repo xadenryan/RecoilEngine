@@ -448,13 +448,13 @@ endif()
 option(ENABLE_STREFLOP "build Spring with streflop support (REQUIRED FOR MULTIPLAYER)" TRUE)
 
 set(RECOIL_BUILD_STREFLOP "${ENABLE_STREFLOP}")
-if (APPLE AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm64|aarch64)$" AND BUILD_spring-dedicated AND NOT BUILD_spring-legacy AND NOT BUILD_spring-headless)
+if (APPLE AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm64|aarch64)$")
 	set(RECOIL_BUILD_STREFLOP FALSE)
 endif()
 set(RECOIL_BUILD_STREFLOP "${RECOIL_BUILD_STREFLOP}" CACHE INTERNAL "Whether streflop is available for the configured build graph")
 
 if (ENABLE_STREFLOP AND NOT RECOIL_BUILD_STREFLOP)
-	message(WARNING "Disabling streflop for native Apple Silicon dedicated-only builds during the phase-1 bring-up. Multiplayer determinism still requires a real arm64 streflop solution.")
+	message(WARNING "Disabling streflop for native Apple Silicon builds during the current bring-up. Multiplayer determinism still requires a real arm64 streflop solution.")
 endif()
 
 if (RECOIL_BUILD_STREFLOP)

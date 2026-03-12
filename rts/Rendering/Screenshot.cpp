@@ -63,3 +63,12 @@ void TakeScreenshot(std::string type, unsigned quality)
 		bmp.Save(args.filename, true, true, args.quality);
 	}, args);
 }
+
+void WaitForPendingScreenshotWrites()
+{
+	if (!fut.valid())
+		return;
+
+	fut.get();
+	fut = {};
+}

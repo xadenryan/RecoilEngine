@@ -45,6 +45,7 @@
 #include "Rendering/HUDDrawer.h"
 #include "Rendering/IconHandler.h"
 #include "Rendering/ModelsDataUploader.h"
+#include "Rendering/Screenshot.h"
 #include "Rendering/ShadowHandler.h"
 #include "Rendering/TeamHighlight.h"
 #include "Rendering/Units/UnitDrawer.h"
@@ -61,6 +62,7 @@
 #include "Lua/LuaSyncedRead.h"
 #include "Lua/LuaUI.h"
 #include "Map/MapDamage.h"
+#include "Map/Ground.h"
 #include "Map/MapInfo.h"
 #include "Map/ReadMap.h"
 #include "Net/GameServer.h"
@@ -145,6 +147,8 @@ CONFIG(bool, GameEndOnConnectionLoss).defaultValue(true);
 CONFIG(bool, ShowFPS).defaultValue(false).description("Displays current framerate.");
 CONFIG(bool, ShowClock).defaultValue(true).headlessValue(false).description("Displays a clock on the top-right corner of the screen showing the elapsed time of the current game.");
 CONFIG(bool, ShowSpeed).defaultValue(false).description("Displays current game speed.");
+CONFIG(bool, ValidationRenderCapture).defaultValue(false).headlessValue(false).description("For automated validation only: capture a screenshot after entering the game and then exit.");
+CONFIG(int, ValidationRenderCaptureFrame).defaultValue(30).minimumValue(1).description("For automated validation only: the first game frame at or after which the validation screenshot should be captured.");
 CONFIG(int, ShowPlayerInfo).defaultValue(1).headlessValue(0);
 CONFIG(float, GuiOpacity).defaultValue(0.8f).minimumValue(0.0f).maximumValue(1.0f).description("Sets the opacity of the built-in Spring UI. Generally has no effect on LuaUI widgets. Can be set in-game using shift+, to decrease and shift+. to increase.");
 CONFIG(std::string, InputTextGeo).defaultValue("");
@@ -246,6 +250,8 @@ CGame::CGame(const std::string& mapFileName, const std::string& modFileName, ILo
 	showFPS   = configHandler->GetBool("ShowFPS");
 	showClock = configHandler->GetBool("ShowClock");
 	showSpeed = configHandler->GetBool("ShowSpeed");
+	validationRenderCapture = configHandler->GetBool("ValidationRenderCapture");
+	validationRenderCaptureFrame = configHandler->GetInt("ValidationRenderCaptureFrame");
 
 	speedControl = configHandler->GetInt("SpeedControl");
 
@@ -1432,6 +1438,7 @@ bool CGame::Draw() {
 	if (UpdateUnsynced(currentTimePreUpdate))
 		return false;
 
+	PrepareValidationRenderCapture();
 	RmlGui::Update();
 	const spring_time currentTimePreDraw = spring_gettime();
 
@@ -1537,6 +1544,8 @@ bool CGame::Draw() {
 		videoCapturing->RenderFrame();
 	}
 
+	MaybeRunValidationRenderCapture();
+
 	SetDrawMode(gameNotDrawing);
 	CTeamHighlight::Disable();
 
@@ -1550,6 +1559,44 @@ bool CGame::Draw() {
 	lastDrawFrameTime = currentTimePostDraw;
 
 	return true;
+}
+
+void CGame::PrepareValidationRenderCapture()
+{
+	if (!validationRenderCapture || validationRenderCapturePrepared)
+		return;
+
+	const float3 captureDir = float3(0.0f, -0.6f, -0.8f).SafeNormalize();
+
+	const float centerX = mapDims.mapx * SQUARE_SIZE * 0.5f;
+	const float centerZ = mapDims.mapy * SQUARE_SIZE * 0.5f;
+	const float centerY = CGround::GetHeightReal(centerX, centerZ, false);
+	float4 targetPos = {centerX, centerY, centerZ, 0.0f};
+
+	hideInterface = true;
+	showClock = false;
+	showFPS = false;
+	showSpeed = false;
+	guihandler->SetDrawSelectionInfo(false);
+
+	camHandler->GetCurrentController().SetPos(targetPos);
+	camHandler->GetCurrentController().SetDir(captureDir);
+	camHandler->CameraTransition(targetPos.w);
+
+	validationRenderCapturePrepared = true;
+}
+
+void CGame::MaybeRunValidationRenderCapture()
+{
+	if (!validationRenderCapture || validationRenderCaptured)
+		return;
+
+	if (gs->frameNum < validationRenderCaptureFrame)
+		return;
+
+	TakeScreenshot("png", 90);
+	validationRenderCaptured = true;
+	gu->globalQuit = true;
 }
 
 
@@ -2204,4 +2251,3 @@ const ActionList& CGame::GetLastActionList()
 {
 	return gameInputReceiver.lastActionList;
 }
-

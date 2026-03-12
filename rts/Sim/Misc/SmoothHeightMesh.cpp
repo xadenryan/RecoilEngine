@@ -11,6 +11,7 @@
 #include "Sim/Misc/ModInfo.h"
 #include "System/float3.h"
 #include "System/Log/ILog.h"
+#include "System/simd_compat.h"
 #include "System/SpringMath.h"
 #include "System/TimeProfiler.h"
 #include "System/Threading/ThreadPool.h"
@@ -220,32 +221,37 @@ inline static void FindRadialMaximum(
 
 		// This may mean the last SSE max function compares some values have already been compared
 		// This is harmless and avoids needlessly messy SSE code here
-		const int endIdx = endx - 3;
+		#if SPRING_HAVE_SSE_INTRINSICS
+			const int endIdx = endx - 3;
 
-		// Main loop for finding maximum height values
-		__m128 best = _mm_loadu_ps(&colsMaxima[startx]);
-		for (int i = startx + 4; i < endIdx; i += 4) {
-			__m128 next = _mm_loadu_ps(&colsMaxima[i]);
-			best = _mm_max_ps(best, next);
-		}
+			// Main loop for finding maximum height values
+			__m128 best = _mm_loadu_ps(&colsMaxima[startx]);
+			for (int i = startx + 4; i < endIdx; i += 4) {
+				__m128 next = _mm_loadu_ps(&colsMaxima[i]);
+				best = _mm_max_ps(best, next);
+			}
 
-		// Check the last few height values
-		{
-			__m128 next = _mm_loadu_ps(&colsMaxima[endIdx]);
-			best = _mm_max_ps(best, next);
-		}
+			// Check the last few height values
+			{
+				__m128 next = _mm_loadu_ps(&colsMaxima[endIdx]);
+				best = _mm_max_ps(best, next);
+			}
 
-		// This is an SSE horizontal compare
-		{
-			// split the four values into sets of two and compare
-			__m128 bestAlt = _mm_movehl_ps(best, best);
-			best = _mm_max_ps(best, bestAlt);
+			// This is an SSE horizontal compare
+			{
+				// split the four values into sets of two and compare
+				__m128 bestAlt = _mm_movehl_ps(best, best);
+				best = _mm_max_ps(best, bestAlt);
 
-			// split the two values and compare
-			bestAlt = _mm_shuffle_ps(best, best, _MM_SHUFFLE(0, 0, 0, 1));
-			best = _mm_max_ss(best, bestAlt);
-			_mm_store_ss(&maxRowHeight, best);
-		}
+				// split the two values and compare
+				bestAlt = _mm_shuffle_ps(best, best, _MM_SHUFFLE(0, 0, 0, 1));
+				best = _mm_max_ss(best, bestAlt);
+				_mm_store_ss(&maxRowHeight, best);
+			}
+		#else
+			for (int i = startx; i <= endx; ++i)
+				maxRowHeight = std::max(maxRowHeight, colsMaxima[i]);
+		#endif
 
 		mesh[x + y * map.x] = maxRowHeight;
 

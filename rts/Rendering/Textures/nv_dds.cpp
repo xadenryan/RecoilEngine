@@ -747,14 +747,14 @@ bool CDDSImage::upload_texture1D() const
 
     if (is_compressed())
     {
-        glCompressedTexImage1DARB(GL_TEXTURE_1D, 0, m_format,
+        glCompressedTexImage1D(GL_TEXTURE_1D, 0, m_format,
             baseImage.get_width(), 0, baseImage.get_size(), baseImage);
 
         // load all mipmaps
         for (unsigned int i = 0; i < baseImage.get_num_mipmaps(); i++)
         {
             const CSurface &mipmap = baseImage.get_mipmap(i);
-            glCompressedTexImage1DARB(GL_TEXTURE_1D, i+1, m_format,
+            glCompressedTexImage1D(GL_TEXTURE_1D, i+1, m_format,
                 mipmap.get_width(), 0, mipmap.get_size(), mipmap);
         }
     }
@@ -817,14 +817,14 @@ bool CDDSImage::upload_texture2D(unsigned int imageIndex, int target) const
 
     if (is_compressed())
     {
-        glCompressedTexImage2DARB(target, 0, m_format, image.get_width(),
+        glCompressedTexImage2D(target, 0, m_format, image.get_width(),
             image.get_height(), 0, image.get_size(), image);
 
         // load all mipmaps
         for (unsigned int i = 0; i < image.get_num_mipmaps(); i++)
         {
             const CSurface &mipmap = image.get_mipmap(i);
-            glCompressedTexImage2DARB(target, i+1, m_format,
+            glCompressedTexImage2D(target, i+1, m_format,
                 mipmap.get_width(), mipmap.get_height(), 0,
                 mipmap.get_size(), mipmap);
         }
@@ -873,7 +873,7 @@ bool CDDSImage::upload_texture3D() const
 
     if (is_compressed())
     {
-        glCompressedTexImage3DARB(GL_TEXTURE_3D, 0, m_format,
+        glCompressedTexImage3D(GL_TEXTURE_3D, 0, m_format,
             baseImage.get_width(), baseImage.get_height(), baseImage.get_depth(),
             0, baseImage.get_size(), baseImage);
 
@@ -881,7 +881,7 @@ bool CDDSImage::upload_texture3D() const
         for (unsigned int i = 0; i < baseImage.get_num_mipmaps(); i++)
         {
             const CSurface &mipmap = baseImage.get_mipmap(i);
-            glCompressedTexImage3DARB(GL_TEXTURE_3D, i+1, m_format,
+            glCompressedTexImage3D(GL_TEXTURE_3D, i+1, m_format,
                 mipmap.get_width(), mipmap.get_height(), mipmap.get_depth(),
                 0, mipmap.get_size(), mipmap);
         }
@@ -1381,4 +1381,3 @@ void CSurface::clear()
 	delete [] m_pixels;
 	m_pixels = nullptr;
 }
-

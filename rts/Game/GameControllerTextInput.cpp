@@ -1,7 +1,7 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
 #include <cassert>
-#include <SDL2/SDL_keyboard.h>
+#include <SDL_keyboard.h>
 
 #include "GameControllerTextInput.h"
 #include "Action.h"
@@ -440,4 +440,3 @@ bool GameControllerTextInput::ConsumeReleasedKey(int keyCode, int scanCode) cons
 
 	return (keyCode == SDLK_RETURN || keyCode == SDLK_BACKSPACE || keyCode == SDLK_DELETE || keyCode == SDLK_HOME || keyCode == SDLK_END || keyCode == SDLK_RIGHT || keyCode == SDLK_LEFT);
 }
-

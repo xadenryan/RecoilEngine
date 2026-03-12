@@ -82,6 +82,7 @@ namespace math {
 	using std::exp;
 	using std::frexp;
 	using std::ldexp;
+	using std::modf;
 	using std::round;
 	using std::erf;
 
@@ -91,6 +92,11 @@ namespace math {
 	static inline float sinf(float x) { return std::sin(x); }
 	static inline float tanf(float x) { return std::tan(x); }
 	static inline float acosf(float x) { return std::acos(x); }
+	static inline float ceilf(float x) { return std::ceil(x); }
+	static inline float floorf(float x) { return std::floor(x); }
+	static inline float roundf(float x) { return std::round(x); }
+	static inline float expf(float x) { return std::exp(x); }
+	static inline float cbrtf(float x) { return std::cbrt(x); }
 	static inline float fabsf(float x) { return std::fabs(x); }
 
 

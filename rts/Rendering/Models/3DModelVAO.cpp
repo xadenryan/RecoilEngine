@@ -8,7 +8,13 @@
 #include "3DModel.hpp"
 #include "3DModelPiece.hpp"
 #include "IModelParser.h"
+#include "Game/Camera.h"
+#include "Rendering/Env/ISky.h"
+#include "Rendering/GlobalRendering.h"
+#include "Rendering/GlobalRenderingInfo.h"
 #include "Rendering/ModelsDataUploader.h"
+#include "Rendering/Shaders/Shader.h"
+#include "Rendering/Shaders/ShaderHandler.h"
 #include "Sim/Units/Unit.h"
 #include "Sim/Units/UnitDef.h"
 #include "Sim/Features/Feature.h"
@@ -232,6 +238,11 @@ void S3DModelVAO::Unbind() const
 void S3DModelVAO::BindLegacyVertexAttribsAndVBOs() const
 {
 	RECOIL_DETAILED_TRACY_ZONE;
+	if (globalRenderingInfo.glContextIsCore) {
+		Bind();
+		return;
+	}
+
 	vertVBO.Bind();
 	indxVBO.Bind();
 
@@ -261,6 +272,11 @@ void S3DModelVAO::BindLegacyVertexAttribsAndVBOs() const
 void S3DModelVAO::UnbindLegacyVertexAttribsAndVBOs() const
 {
 	RECOIL_DETAILED_TRACY_ZONE;
+	if (globalRenderingInfo.glContextIsCore) {
+		Unbind();
+		return;
+	}
+
 	glClientActiveTexture(GL_TEXTURE6);
 	glDisableClientState(GL_TEXTURE_COORD_ARRAY);
 
@@ -283,6 +299,28 @@ void S3DModelVAO::UnbindLegacyVertexAttribsAndVBOs() const
 void S3DModelVAO::DrawElements(GLenum prim, uint32_t vboIndxStart, uint32_t vboIndxCount) const
 {
 	RECOIL_DETAILED_TRACY_ZONE;
+	if (globalRenderingInfo.glContextIsCore) {
+		if (Shader::IProgramObject* po = shaderHandler->GetCurrentlyBoundProgram(); po != nullptr) {
+			CMatrix44f modelViewMat;
+			CMatrix44f projectionMat;
+
+			glGetFloatv(GL_MODELVIEW_MATRIX, modelViewMat.m);
+			glGetFloatv(GL_PROJECTION_MATRIX, projectionMat.m);
+
+			po->SetUniformMatrix4x4("recoilModelViewMatrix", false, modelViewMat.m);
+			po->SetUniformMatrix4x4("recoilProjectionMatrix", false, projectionMat.m);
+
+			if (const auto& sky = ISky::GetSky(); sky != nullptr) {
+				const float fogStart = sky->fogStart * camera->GetFarPlaneDist();
+				const float fogEnd = sky->fogEnd * camera->GetFarPlaneDist();
+				const float fogScale = (fogEnd > fogStart) ? (1.0f / (fogEnd - fogStart)) : 0.0f;
+
+				po->SetUniform("recoilFogColor", sky->fogColor.x, sky->fogColor.y, sky->fogColor.z, sky->fogColor.w);
+				po->SetUniform("recoilFogParams", fogStart, fogEnd, fogScale, globalRendering->drawFog ? 1.0f : 0.0f);
+			}
+		}
+	}
+
 	glDrawElements(prim, vboIndxCount, GL_UNSIGNED_INT, indxVBO.GetPtr(vboIndxStart * sizeof(uint32_t)));
 }
 

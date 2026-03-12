@@ -50,16 +50,26 @@ include_directories(${ENGINE_SRC_ROOT_DIR}/lib/asio/include)
 include_directories(${ENGINE_SRC_ROOT_DIR}/lib/slimsig/include)
 include_directories(${ENGINE_SRC_ROOT_DIR}/lib/cereal/include)
 
-create_headless_target_from(Game)
+if (TARGET Game)
+	create_headless_target_from(Game)
+else()
+	add_library(GameHeadless STATIC)
+	target_sources(GameHeadless PRIVATE ${sources_engine_Game})
+	add_dependencies(GameHeadless generateVersionFiles)
+	target_include_directories(GameHeadless PRIVATE "${CMAKE_BINARY_DIR}/src-generated/engine")
+endif()
+
 target_link_libraries(GameHeadless PRIVATE
 	Tracy::TracyClient
 	headlessStubs
 	RmlUi::Core
 	prd::jsoncpp
-	streflop
 	nowide::nowide
 	fmt::fmt
 )
+if (RECOIL_BUILD_STREFLOP)
+	target_link_libraries(GameHeadless PRIVATE streflop)
+endif()
 ### Build the executable
 add_executable(engine-headless ${engineSources} ${ENGINE_ICON})
 target_link_libraries(engine-headless no-sound ${engineHeadlessLibraries} GameHeadless no-sound)
