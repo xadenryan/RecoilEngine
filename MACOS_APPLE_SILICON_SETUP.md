@@ -2,6 +2,8 @@
 
 This document records the repo-local machine context, Apple Silicon bootstrap, runtime requirements, and current Apple Silicon bring-up status for this workspace.
 
+The canonical Apple Silicon engineering and validation contract now lives in [MACOS_APPLE_SILICON_PORT_SPEC.md](MACOS_APPLE_SILICON_PORT_SPEC.md). Keep this file focused on concrete machine bootstrap and runtime requirements.
+
 ## Local Machine Context
 
 This workspace is currently being used on the following development machine:

@@ -2,6 +2,8 @@
 
 This document records the repo-local steps used to bring up a same-machine `x86_64` reference build on an Apple Silicon Mac.
 
+The canonical Apple Silicon engineering and validation contract now lives in [MACOS_APPLE_SILICON_PORT_SPEC.md](MACOS_APPLE_SILICON_PORT_SPEC.md). This file stays focused on Rosetta-specific bootstrap and linker details.
+
 ## Goal
 
 Use a Rosetta `x86_64` macOS build of RecoilEngine on this machine as a render-comparison reference for the native Apple Silicon port.
@@ -136,7 +138,7 @@ The explicit `OPENAL_*` and `OPENAL_SOFT_*` overrides force the reference build 
 ## Build Command
 
 ```bash
-cmake --build build-macos-x86-cross-probe-clean2 --target engine-legacy -j4
+cmake --build build-macos-x86-cross-probe-clean2 --target engine-legacy pr-downloader_cli -j4
 ```
 
 ## Validation Goal
