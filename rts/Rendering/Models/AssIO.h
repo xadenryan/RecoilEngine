@@ -3,6 +3,8 @@
 #ifndef ASS_IO_H
 #define ASS_IO_H
 
+#include <string>
+
 #include "lib/assimp/include/assimp/IOStream.hpp"
 #include "lib/assimp/include/assimp/IOSystem.hpp"
 class CFileHandler;
