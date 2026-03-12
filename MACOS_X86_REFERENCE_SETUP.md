@@ -53,6 +53,19 @@ arch -x86_64 /usr/local/bin/brew install \
   bash sdl2 freetype fontconfig libogg libvorbis pkgconf devil openal-soft sevenzip
 ```
 
+## Current `pr-downloader` Requirement
+
+The current same-machine `x86_64` reference path also depends on a `tools/pr-downloader` submodule commit that adds macOS `x86_64` platform selection support:
+
+- submodule commit: `f18c4ffadc2ecdce4ba25ba3184ce9751c97a68a`
+- commit subject: `Add macOS x86_64 platform support`
+
+At the moment, that commit lives in the fork configured by this branch:
+
+- `.gitmodules` URL: `https://github.com/nickpoorman/pr-downloader`
+
+This is a temporary reference-build dependency, not a long-term upstreaming story. Once equivalent macOS `x86_64` support exists in the upstream `pr-downloader`, point the submodule back at upstream and drop the fork-specific requirement in the same change set.
+
 ## Verified x86_64 Libraries
 
 The following x86_64 dylibs were verified under `/usr/local` on this machine:
