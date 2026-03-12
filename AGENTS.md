@@ -23,6 +23,7 @@ Current verified Apple Silicon status on this machine:
 - `engine-legacy` now passes the isolated blank-map GUI smoke in a visible macOS desktop session
 - `test/validation/run-legacy-render-smoke.sh` now captures a deterministic validation frame from the native macOS legacy client, and a repeat capture matches the current baseline through `test/validation/compare-render-images.sh`
 - the modern info-texture path now uses a localized GLSL-version adapter so its core-safe fullscreen shaders can promote from GLSL 1.30 to 1.50 when the macOS client is forced onto an OpenGL core profile
+- `test/validation/run-bar-realcontent-smoke.sh` now boots the native Apple Silicon legacy client into a real BAR content scene, downloads the required BAR packages through the isolated fixture, and captures a validation screenshot from the native macOS client
 - native graphical-client runtime verification beyond the current blank-map startup and render-capture harness is still in progress because SDL requires a macOS session with visible displays and broader renderer parity work remains
 
 ## Apple Silicon Dependency Bootstrap
@@ -74,6 +75,7 @@ brew install sdl2 freetype fontconfig libogg libvorbis pkgconf devil sevenzip op
 - The current isolated native legacy-client smoke must stage `cont/fonts` into the isolation dir as `fonts/`, or the client will fail during early UI and font initialization
 - The current isolated native legacy-client smoke must set `ForceCoreContext = 1` in a flat `springsettings.cfg` because the Apple OpenGL path on this machine does not provide a higher-version compatibility context during SDL context creation
 - The current isolated native legacy render-validation smoke also depends on the automation-only config keys `ValidationRenderCapture = 1` and `ValidationRenderCaptureFrame = 30` to trigger the engine-side screenshot hook at a deterministic frame
+- The current BAR real-content smoke depends on `tools/pr-downloader` plus network access to fetch the BAR package and map archives unless a warmed `RECOIL_BAR_CONTENT_CACHE_DIR` is provided
 - `SDL_VIDEODRIVER=offscreen` is not a substitute for a real GUI session on this machine: SDL reports a synthetic `1024x768` mode, but `CreateSDLWindow` still fails with `Could not initialize OpenGL / GLES library`
 - If additional host tools or launch-context requirements are discovered for GUI validation on other Apple Silicon machines, add the exact steps here immediately
 
@@ -143,6 +145,8 @@ Current Apple Silicon phase-1 progress on this machine has moved beyond planning
 - The native macOS graphical client now builds, but automated runtime smoke still requires an interactive macOS desktop session with visible displays; in the current automation context even `launchctl bsexec` against the Aqua login session can still fail before OpenGL initialization with `The video driver did not add any displays`
 - The current Apple core-profile client path still has known rendering gaps after startup, including the optional uniform-constant UBO path, sky shader parity, and other compatibility-profile shader surfaces that have not been fully modernized yet
 - The current automated render-parity proof only covers the blank-map fixture used by `test/validation/run-legacy-render-smoke.sh`; it is a narrow regression harness, not yet a substitute for broader gameplay or replay-based graphical parity testing
+- Real BAR content startup is now working far enough to render and capture a frame on native Apple Silicon, but repeated BAR capture is still not stable enough to treat as a deterministic graphical parity proof; the latest repeated capture drift remains confined to the top-right quadrant of the captured frame
+- BAR content still loses a number of optional GL4 widgets on this macOS OpenGL 4.1 path because BAR ships shaders that require GLSL 4.20 or 4.30 features beyond Apple OpenGL 4.1, and some Lua-side capability gates still key off legacy raw ARB extension strings instead of the engine's new core-aware helpers
 - The legacy benchmark script at `tools/benchmark/script_benchmark.txt` is not a valid Apple Silicon dedicated smoke target because it assumes external game, map, and AI content that is not part of this phase-1 fixture
 
 ## Dedicated Smoke Verification Contract
@@ -287,6 +291,12 @@ Do not silently disable subsystems just to get a build through. If a temporary d
   Why: the current renderer still expects the legacy ARB capability and GLSL layout surface, while the Apple OpenGL stack can expose an incomplete subset for this path.
   Verification impact: client startup and smoke progress do not yet prove parity for the UBO-backed uniform-constant path on Apple Silicon.
   Exit criteria: provide a verified Apple-safe UBO and GLSL path or add a compatibility adapter that preserves the existing renderer behavior without relying on unsupported extension semantics.
+
+- BAR GL4 widget surface:
+  BAR real-content startup currently disables a number of optional GL4 Lua widgets and effects on the native macOS Apple Silicon path.
+  Why: Apple OpenGL tops out at GLSL 4.10, while parts of BAR's current Lua GL4 stack request GLSL 4.20 or 4.30 features and some Lua capability gates still treat core-promoted VBO and VAO support as unavailable when the raw ARB extension strings are missing.
+  Verification impact: a successful BAR real-content smoke currently proves the native macOS client can boot BAR content and render a frame, but it does not yet prove parity for those higher-end Lua GL4 widgets or full UI and post-processing behavior.
+  Exit criteria: add additive compatibility adapters or capability-translation fixes that let the affected BAR Lua GL4 paths either run correctly on Apple OpenGL 4.1 or degrade in a documented, verified way against a known-good reference.
 
 - Sky rendering:
   `ISky::SetSky` can currently fail to create `ModernSky` on the Apple core-profile path and fall back to `NullSky`.

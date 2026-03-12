@@ -17,6 +17,7 @@
 #include "Rendering/ShadowHandler.h"
 #include "Rendering/Env/ISky.h"
 #include "Rendering/Env/SunLighting.h"
+#include "Rendering/GL/myGL.h"
 #include "Rendering/GL/VertexArray.h"
 #include "Rendering/Textures/Bitmap.h"
 #include "Sim/MoveTypes/MoveDefHandler.h"
@@ -75,7 +76,7 @@ void CDynWater::InitResources(bool loadShader)
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_NEAREST);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F_ARB, 256, 256, 0, GL_RGBA, GL_FLOAT, 0);
-	glGenerateMipmapEXT(GL_TEXTURE_2D);
+	RecoilGenerateMipmap(GL_TEXTURE_2D);
 
 	float* temp = new float[1024 * 1024 * 4];
 
@@ -1015,7 +1016,7 @@ void CDynWater::DrawDetailNormalTex()
 	glFlush();
 
 	glBindTexture(GL_TEXTURE_2D,detailNormalTex);
-	glGenerateMipmapEXT(GL_TEXTURE_2D);
+	RecoilGenerateMipmap(GL_TEXTURE_2D);
 
 }
 

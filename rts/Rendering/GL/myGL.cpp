@@ -416,12 +416,30 @@ void RecoilBuildMipmaps(const GLenum target, GLint internalFormat, const GLsizei
 	glTexParameteri(target, GL_TEXTURE_BASE_LEVEL,          0);
 	glTexParameteri(target, GL_TEXTURE_MAX_LEVEL , levels - 1);
 
+	RecoilGenerateMipmap(target);
+}
+
+void RecoilGenerateMipmap(GLenum target)
+{
+	RECOIL_DETAILED_TRACY_ZONE;
+	const bool hasCoreGenerateMipmap = IS_GL_FUNCTION_AVAILABLE(glGenerateMipmap);
+	const bool hasExtGenerateMipmap = IS_GL_FUNCTION_AVAILABLE(glGenerateMipmapEXT);
+
+	if (!hasCoreGenerateMipmap && !hasExtGenerateMipmap)
+		throw unsupported_error("OpenGL mipmap generation is not supported");
+
 	if (globalRendering->amdHacks) {
 		glEnable(target);
-		glGenerateMipmap(target);
+		if (hasCoreGenerateMipmap)
+			glGenerateMipmap(target);
+		else
+			glGenerateMipmapEXT(target);
 		glDisable(target);
 	} else {
-		glGenerateMipmap(target);
+		if (hasCoreGenerateMipmap)
+			glGenerateMipmap(target);
+		else
+			glGenerateMipmapEXT(target);
 	}
 }
 

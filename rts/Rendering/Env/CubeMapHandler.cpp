@@ -78,7 +78,7 @@ bool CubeMapHandler::Init() {
 	}
 
 	if (generateMipMaps)
-		glGenerateMipmapEXT(GL_TEXTURE_CUBE_MAP);
+		RecoilGenerateMipmap(GL_TEXTURE_CUBE_MAP);
 
 	if (mapSkyReflections) {
 		glGenTextures(1, &skyReflectionTexID);
@@ -176,7 +176,7 @@ void CubeMapHandler::UpdateReflectionTexture()
 
 	if (generateMipMaps && currReflectionFace == 0) {
 		glBindTexture(GL_TEXTURE_CUBE_MAP, envReflectionTexID);
-		glGenerateMipmapEXT(GL_TEXTURE_CUBE_MAP);
+		RecoilGenerateMipmap(GL_TEXTURE_CUBE_MAP);
 		glBindTexture(GL_TEXTURE_CUBE_MAP, 0);
 	}
 }
@@ -327,4 +327,3 @@ void CubeMapHandler::UpdateSpecularFace(
 
 	glTexSubImage2D(texType, 0, 0, y, size, 1, GL_RGBA, GL_UNSIGNED_BYTE, buf);
 }
-

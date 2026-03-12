@@ -58,7 +58,12 @@ LuaVAOImpl::~LuaVAOImpl()
 
 bool LuaVAOImpl::Supported()
 {
-	static bool supported = VBO::IsSupported(GL_ARRAY_BUFFER) && VAO::IsSupported() && GLAD_GL_ARB_instanced_arrays && GLAD_GL_ARB_draw_elements_base_vertex && GLAD_GL_ARB_multi_draw_indirect;
+	static bool supported =
+		VBO::IsSupported(GL_ARRAY_BUFFER) &&
+		VAO::IsSupported() &&
+		(GLAD_GL_ARB_instanced_arrays || GLAD_GL_VERSION_3_3) &&
+		(GLAD_GL_ARB_draw_elements_base_vertex || GLAD_GL_VERSION_3_2) &&
+		(GLAD_GL_ARB_multi_draw_indirect || GLAD_GL_VERSION_4_3);
 	return supported;
 }
 

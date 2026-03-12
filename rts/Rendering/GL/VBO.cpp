@@ -22,6 +22,38 @@
 CONFIG(bool, UseVBO).deprecated(true);
 CONFIG(bool, UsePBO).deprecated(true);
 
+namespace {
+	bool HasMapBufferRangeSupport()
+	{
+		return GLAD_GL_ARB_map_buffer_range || GLAD_GL_VERSION_3_0;
+	}
+
+	bool HasPixelBufferObjectSupport()
+	{
+		return GLAD_GL_EXT_pixel_buffer_object || GLAD_GL_VERSION_2_1;
+	}
+
+	bool HasVertexBufferObjectSupport()
+	{
+		return GLAD_GL_ARB_vertex_buffer_object || GLAD_GL_VERSION_1_5;
+	}
+
+	bool HasUniformBufferObjectSupport()
+	{
+		return GLAD_GL_ARB_uniform_buffer_object || GLAD_GL_VERSION_3_1;
+	}
+
+	bool HasShaderStorageBufferObjectSupport()
+	{
+		return GLAD_GL_ARB_shader_storage_buffer_object || GLAD_GL_VERSION_4_3;
+	}
+
+	bool HasCopyBufferSupport()
+	{
+		return GLAD_GL_ARB_copy_buffer || GLAD_GL_VERSION_3_1;
+	}
+}
+
 
 /**
  * Returns if the current gpu drivers support object's buffer type
@@ -36,15 +68,15 @@ bool VBO::IsSupported() const
  * Returns if the current gpu drivers support certain buffer type
  */
 bool VBO::IsSupported(GLenum target) {
-	static bool isRangeMappingSupported = GLAD_GL_ARB_map_buffer_range;
+	static bool isRangeMappingSupported = HasMapBufferRangeSupport();
 	if (!isRangeMappingSupported) //TODO glBufferSubData() fallback ?
 		return false;
 
-	static bool isPBOSupported  = (GLAD_GL_EXT_pixel_buffer_object);
-	static bool isVBOSupported  = (GLAD_GL_ARB_vertex_buffer_object);
-	static bool isUBOSupported  = (GLAD_GL_ARB_uniform_buffer_object);
-	static bool isSSBOSupported = (GLAD_GL_ARB_shader_storage_buffer_object);
-	static bool isCopyBuffSupported = (GLAD_GL_ARB_copy_buffer);
+	static bool isPBOSupported  = HasPixelBufferObjectSupport();
+	static bool isVBOSupported  = HasVertexBufferObjectSupport();
+	static bool isUBOSupported  = HasUniformBufferObjectSupport();
+	static bool isSSBOSupported = HasShaderStorageBufferObjectSupport();
+	static bool isCopyBuffSupported = HasCopyBufferSupport();
 
 	switch (target) {
 	case GL_PIXEL_PACK_BUFFER:
@@ -127,7 +159,7 @@ void VBO::Delete() {
 	}
 	bbrItems.clear();
 
-	if (GLAD_GL_ARB_vertex_buffer_object)
+	if (HasVertexBufferObjectSupport())
 		glDeleteBuffers(1, &vboId);
 
 	vboId = 0;
@@ -582,4 +614,3 @@ size_t VBO::GetOffsetAlignment(GLenum target) {
 		return 1;
 	}
 }
-

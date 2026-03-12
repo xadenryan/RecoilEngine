@@ -10,6 +10,7 @@
 #include "Rendering/GlobalRendering.h"
 #include "Rendering/GL/myGL.h"
 #include "Rendering/GL/FBO.h"
+#include "Rendering/GL/VAO.h"
 #include "Rendering/GL/TexBind.h"
 #include "Rendering/GL/SubState.h"
 #include "Rendering/GL/RenderBuffers.h"
@@ -108,7 +109,12 @@ CTextureRenderAtlas::CTextureRenderAtlas(
 		shader->SetUniform("tex", 0);
 		shader->SetUniform("lod", 0.0f);
 		shader->Disable();
-		shader->Validate();
+		{
+			VAO vao;
+			vao.Bind();
+			shader->Validate();
+			vao.Unbind();
+		}
 	}
 
 	shaderRef++;

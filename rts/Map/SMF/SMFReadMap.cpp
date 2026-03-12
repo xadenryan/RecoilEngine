@@ -20,6 +20,7 @@
 #include "Rendering/GL/myGL.h"
 #include "Rendering/GL/FBO.h"
 #include "Rendering/GL/PBO.h"
+#include "Rendering/GL/VAO.h"
 #include "Rendering/GL/RenderBuffers.h"
 #include "Rendering/GL/SubState.h"
 #include "Rendering/Shaders/ShaderHandler.h"
@@ -443,7 +444,12 @@ void CSMFReadMap::CreateShadingGL()
 	shadingShader->SetUniform("waterLevel", CGround::GetWaterPlaneLevel());
 	shadingShader->Disable();
 
-	shadingShader->Validate();
+	{
+		VAO vao;
+		vao.Bind();
+		shadingShader->Validate();
+		vao.Unbind();
+	}
 }
 
 void CSMFReadMap::UpdateHeightMapUnsynced(const SRectangle& update)

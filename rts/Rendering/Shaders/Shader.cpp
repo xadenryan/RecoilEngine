@@ -5,6 +5,7 @@
 #include "Rendering/Shaders/LuaShaderContainer.h"
 #include "Rendering/Shaders/GLSLCopyState.h"
 #include "Rendering/GL/myGL.h"
+#include "Rendering/GL/VAO.h"
 #include "Rendering/GlobalRendering.h"
 #include "Rendering/GlobalRenderingInfo.h"
 
@@ -530,10 +531,21 @@ namespace Shader {
 	bool GLSLProgramObject::Validate() {
 		RECOIL_DETAILED_TRACY_ZONE;
 		GLint validated = 0;
+		GLint boundVAO = 0;
+		VAO validateVAO;
+
+		if (globalRenderingInfo.glContextIsCore) {
+			glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &boundVAO);
+			if (boundVAO == 0)
+				validateVAO.Bind();
+		}
 
 		glValidateProgram(objID);
 		glGetProgramiv(objID, GL_VALIDATE_STATUS, &validated);
 		valid = bool(validated);
+
+		if (globalRenderingInfo.glContextIsCore && boundVAO == 0)
+			validateVAO.Unbind();
 
 		// append the validation-log
 		log += glslGetLog(objID);

@@ -1043,12 +1043,12 @@ void CGlobalRendering::QueryGLMaxVals()
 		glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, &maxTexAnisoLvl);
 
 	// some GLSL relevant information
-	if (GLAD_GL_ARB_uniform_buffer_object) {
+	if (GLAD_GL_ARB_uniform_buffer_object || GLAD_GL_VERSION_3_1) {
 		glGetIntegerv(GL_MAX_UNIFORM_BUFFER_BINDINGS, &glslMaxUniformBufferBindings);
 		glGetIntegerv(GL_MAX_UNIFORM_BLOCK_SIZE,      &glslMaxUniformBufferSize);
 	}
 
-	if (GLAD_GL_ARB_shader_storage_buffer_object) {
+	if (GLAD_GL_ARB_shader_storage_buffer_object || GLAD_GL_VERSION_4_3) {
 		glGetIntegerv(GL_MAX_SHADER_STORAGE_BUFFER_BINDINGS, &glslMaxStorageBufferBindings);
 		glGetIntegerv(GL_MAX_SHADER_STORAGE_BLOCK_SIZE,      &glslMaxStorageBufferSize);
 	}

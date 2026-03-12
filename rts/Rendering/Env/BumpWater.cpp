@@ -370,7 +370,7 @@ void CBumpWater::InitResources(bool loadShader)
 			glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, anisotropy);
 		}
 		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, normalTextureX, normalTextureY, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
-		glGenerateMipmapEXT(GL_TEXTURE_2D);
+		RecoilGenerateMipmap(GL_TEXTURE_2D);
 	}
 
 	// CREATE FBOs
@@ -793,7 +793,7 @@ void CBumpWater::UpdateCoastmap(const bool initialize)
 	//glBindTexture(GL_TEXTURE_2D, coastTexture);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_NEAREST);
-	glGenerateMipmapEXT(GL_TEXTURE_2D);
+	RecoilGenerateMipmap(GL_TEXTURE_2D);
 
 	// delete UpdateAtlas
 	glActiveTexture(GL_TEXTURE1);
@@ -886,7 +886,7 @@ void CBumpWater::UpdateDynWaves(const bool initialize)
 	dynWavesFBO.Unbind();
 
 	glBindTexture(GL_TEXTURE_2D, normalTexture);
-	glGenerateMipmapEXT(GL_TEXTURE_2D);
+	RecoilGenerateMipmap(GL_TEXTURE_2D);
 }
 
 

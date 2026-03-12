@@ -355,7 +355,7 @@ bool LuaOpenGL::PushEntries(lua_State* L)
 		REGISTER_LUA_CFUNC(DeleteTextureFBO);
 		REGISTER_LUA_CFUNC(RenderToTexture);
 	}
-	if (IS_GL_FUNCTION_AVAILABLE(glGenerateMipmapEXT))
+	if (IS_GL_FUNCTION_AVAILABLE(glGenerateMipmap) || IS_GL_FUNCTION_AVAILABLE(glGenerateMipmapEXT))
 		REGISTER_LUA_CFUNC(GenerateMipmap);
 
 	REGISTER_LUA_CFUNC(ActiveTexture);
@@ -4449,7 +4449,7 @@ int LuaOpenGL::GenerateMipmap(lua_State* L)
 		return 0;
 
 	auto texBind = GL::TexBind(tex->target, tex->id);
-	glGenerateMipmapEXT(tex->target);
+	RecoilGenerateMipmap(tex->target);
 
 	return 0;
 }
