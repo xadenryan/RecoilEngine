@@ -466,7 +466,8 @@ namespace Shader {
 		, objID(0)
 		, logReporting(true)
 		, valid(false)
-		, bound(false) {
+		, bound(false)
+		, skipValidation(false) {
 	}
 
 	void IProgramObject::SetLogReporting(bool b, bool shObjects)
@@ -981,7 +982,7 @@ namespace Shader {
 		}
 
 		// FIXME: fails on ATI, see https://springrts.com/mantis/view.php?id=4715
-		if (validate && (!globalRendering->haveAMD && !globalRendering->haveIntel))
+		if (validate && !skipValidation && (!globalRendering->haveAMD && !globalRendering->haveIntel))
 			Validate();
 
 		// copy full program state from old to new program (uniforms etc.)

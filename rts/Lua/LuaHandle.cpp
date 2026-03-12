@@ -382,11 +382,11 @@ int CLuaHandle::RunCallInTraceback(
 			handle->SetHandleRunning(state, true); // inc
 			const bool canDraw = LuaOpenGL::IsDrawingEnabled(state);
 
-			SMatrixStateData prevMatState;
+			SMatrixTrackerStateData prevMatState;
 			GLMatrixStateTracker& matTracker = GetLuaContextData(state)->glMatrixTracker;
 
 			if (canDraw) {
-				prevMatState = matTracker.PushMatrixState();
+				prevMatState = matTracker.PushState();
 				LuaOpenGL::InitMatrixState(state, luaFunc);
 			}
 
@@ -400,7 +400,7 @@ int CLuaHandle::RunCallInTraceback(
 
 			if (canDraw) {
 				LuaOpenGL::CheckMatrixState(state, luaFunc, error);
-				matTracker.PopMatrixState(prevMatState);
+				matTracker.PopState(prevMatState);
 			}
 
 			handle->SetHandleRunning(state, false); // dec

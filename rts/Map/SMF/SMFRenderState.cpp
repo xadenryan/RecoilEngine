@@ -58,6 +58,11 @@ bool SMFRenderStateGLSL::Init(const CSMFGroundDrawer* smfGroundDrawer) {
 			glslShaders[n]->AttachShaderObject(shaderHandler->CreateShaderObject("GLSL/SMFVertProg.glsl", defs, GL_VERTEX_SHADER));
 			glslShaders[n]->AttachShaderObject(shaderHandler->CreateShaderObject("GLSL/SMFFragProg.glsl", defs, GL_FRAGMENT_SHADER));
 			glslShaders[n]->BindAttribLocation("vertexPos", 0);
+
+#ifdef __APPLE__
+			if (n != GLSL_SHADER_FWD_STD)
+				glslShaders[n]->SetSkipValidation(true);
+#endif
 		}
 	}
 
@@ -187,7 +192,16 @@ void SMFRenderStateGLSL::Update(
 			glslShaders[n]->SetUniform("specularTexGen", 1.0f / (mapDims.mapx * SQUARE_SIZE), 1.0f / (mapDims.mapy * SQUARE_SIZE));
 
 			glslShaders[n]->Disable();
+#ifdef __APPLE__
+			// Apple's core-profile validation is strict about sampler bindings that are not
+			// yet backed by the real terrain textures. The SMF advanced shaders bind those
+			// textures later in Enable(), so pre-bind validation here would incorrectly mark
+			// them invalid and force the fallback path.
+			if (!isAdv)
+				glslShaders[n]->Validate();
+#else
 			glslShaders[n]->Validate();
+#endif
 		}
 	}
 }

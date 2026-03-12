@@ -128,7 +128,7 @@ namespace Shader {
 
 		void LoadFromID(unsigned int id) {
 			objID = id;
-			valid = (id != 0 && Validate());
+			valid = (id != 0 && (skipValidation || Validate()));
 			bound = false;
 
 			// not needed for pre-compiled programs
@@ -144,6 +144,8 @@ namespace Shader {
 		void BindAttribLocations();
 
 		void SetLogReporting(bool b, bool shObjects = true);
+		void SetSkipValidation(bool b) { skipValidation = b; }
+		bool GetSkipValidation() const { return skipValidation; }
 
 		[[nodiscard]] ShaderEnabledToken EnableScoped() {
 			return ShaderEnabledToken(this);
@@ -313,6 +315,7 @@ namespace Shader {
 		bool logReporting;
 		bool valid;
 		bool bound;
+		bool skipValidation;
 
 		std::vector<IShaderObject*> shaderObjs;
 

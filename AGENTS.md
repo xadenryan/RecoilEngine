@@ -15,149 +15,24 @@ When adapting build or test commands for this host, prefer Apple Silicon-compati
 
 This machine is still being brought up for RecoilEngine development. The current project status is that we are in the process of getting the game building and running successfully on this MacBook Pro.
 
-Current verified Apple Silicon status on this machine:
+High-level Apple Silicon status on this machine:
 
-- `engine-dedicated` builds and passes the isolated blank-map smoke
-- `engine-headless` builds and passes the isolated blank-map smoke
-- `engine-legacy` now builds as a native `arm64` Mach-O executable
-- `engine-legacy` now passes the isolated blank-map GUI smoke in a visible macOS desktop session
-- `test/validation/run-legacy-render-smoke.sh` now captures a deterministic validation frame from the native macOS legacy client, and a repeat capture matches the current baseline through `test/validation/compare-render-images.sh`
-- `test/validation/compare-render-images.sh` now compares decoded RGBA pixels through a localized Swift/ImageIO helper instead of relying on `sips` image-format normalization
-- the modern info-texture path now uses a localized GLSL-version adapter so its core-safe fullscreen shaders can promote from GLSL 1.30 to 1.50 when the macOS client is forced onto an OpenGL core profile
-- the native macOS core-profile path now includes additive Lua and shader compatibility layers for Apple OpenGL 4.1: program validation auto-binds a temporary VAO when needed, Lua VAO draws emulate missing `ARB_base_instance` and `ARB_multi_draw_indirect` behavior per draw, and Lua shader compilation now normalizes GLSL versions, strips unsupported `layout(binding=...)` qualifiers, and rebinds engine UBO blocks explicitly after program link
-- the native macOS core-profile path now also uses a shared legacy-GLSL compatibility layer for both engine shaders and Lua shaders so BAR can preserve legacy `gl_*`, `attribute`, `varying`, `texture2D`, compatibility-profile suffix, and undefined non-`GL_*` conditional-macro surfaces through a localized translation layer instead of broad renderer rewrites
-- shader conditional-macro defaulting is now shared through `Rendering/Shaders/ShaderPreprocessorUtils.h`, and the parser now strips comment text before collecting identifiers so BAR shaders such as `Contrast Adaptive Sharpen` no longer get corrupted by generated defaults like `#define in 0`
-- the projectile-effects shader path now uses a localized Apple core-profile adapter that replaces fixed-function matrix GLSL state in `ProjFX*` shaders with explicit per-draw view and projection uniforms, and BAR startup now gets past the prior `ProjFXVertProg` core-profile compile failure on this machine
-- `test/validation/run-bar-realcontent-smoke.sh` now boots the native Apple Silicon legacy client into a real BAR content scene, downloads the required BAR packages through the isolated fixture, and captures a validation screenshot from the native macOS client
-- `test/validation/run-bar-realcontent-smoke.sh` now uses a stabilized BAR validation fixture on this machine: it captures the earlier real-content frame, and a repeat capture now matches within the documented BAR-specific image tolerance through `test/validation/compare-render-images.sh`
-- `test_ShaderPreprocessorUtils` now passes on this machine and acts as a direct regression test for the shared shader preprocessor comment-stripping behavior
-- native graphical-client runtime verification beyond the current blank-map startup and render-capture harness is still in progress because SDL requires a macOS session with visible displays and broader renderer parity work remains
+- native `arm64` builds for `engine-dedicated`, `engine-headless`, and `engine-legacy` are working
+- the blank-map smoke and deterministic render-validation harnesses are working on this machine
+- BAR real-content validation is partially working, but full native macOS playability and rendering parity are still in progress
 
-## Apple Silicon Dependency Bootstrap
+## macOS Bring-Up Docs
 
-Record every host dependency required to build RecoilEngine on Apple Silicon macOS as it is discovered. Do not leave this implicit in terminal history.
+Detailed machine-specific setup, dependency bootstrap, runtime requirements, bring-up status, and same-machine reference-build workflows live in:
 
-### Required Apple toolchain on this machine
+- [MACOS_APPLE_SILICON_SETUP.md](MACOS_APPLE_SILICON_SETUP.md)
+- [MACOS_X86_REFERENCE_SETUP.md](MACOS_X86_REFERENCE_SETUP.md)
 
-- Full Xcode selected via `xcode-select`:
-  `/Applications/Xcode.app/Contents/Developer`
-- Apple Clang:
-  `Apple clang version 17.0.0 (clang-1700.6.4.2)`
-- CMake:
-  `cmake version 4.2.3`
+Whenever Apple Silicon or Rosetta x86 bring-up changes, update those docs in the same change set. Any Apple-specific disable, fallback, stub, or degraded path must still be recorded in the Apple-specific disable section of this file.
 
-If another Apple Silicon machine uses a different Xcode, Clang, or CMake baseline during bring-up, record the exact versions here in the same change set.
-
-### Current Homebrew bootstrap command
-
-```bash
-brew install sdl2 freetype fontconfig libogg libvorbis pkgconf devil sevenzip openal-soft
-```
-
-### Current Homebrew packages verified on this machine
-
-- `sdl2 2.32.10`
-- `freetype 2.14.2`
-- `fontconfig 2.17.1`
-- `libogg 1.3.6`
-- `libvorbis 1.3.7`
-- `pkgconf 2.5.1`
-- `devil 1.8.0_6`
-- `sevenzip 26.00`
-- `openal-soft 1.25.1`
-
-### Dependency notes
-
-- `devil` is required when configuring the shared graphical or headless build graph on this machine
-- `sevenzip` is required for `cont/base` archive generation during the current headless build flow
-- Homebrew currently provides the SevenZip executable as `7zz`, so the build system must not assume only `7z` or `7za`
-- `sdl2`, `freetype`, `fontconfig`, `libogg`, `libvorbis`, and `pkgconf` are part of the current macOS bootstrap surface and should be installed before debugging higher-level build failures
-- `openal-soft` is required for the current native macOS graphical-client bring-up because Apple-provided `OpenAL.framework` does not expose the EFX surface the current sound implementation expects
-- automated render comparison now relies on Xcode Swift tooling (`xcrun swift`, or `swift` as a fallback) plus the macOS ImageIO/CoreGraphics frameworks through `test/validation/compare-render-images.swift`; the earlier `sips` normalization path was replaced because `sips` could not provide a reliable exact-byte comparison flow on this macOS 26.3.1 host
-
-### Known runtime environment requirements
-
-- X11 or XQuartz is no longer required for the current native macOS client configure and build path; GLX and X11 linkage are now scoped to non-Apple Unix targets
-- Native graphical-client smoke requires a macOS session with visible desktop displays; when AppKit and SDL both report zero displays, the client aborts before OpenGL initialization with `The video driver did not add any displays`
-- The current isolated native legacy-client smoke must stage `cont/fonts` into the isolation dir as `fonts/`, or the client will fail during early UI and font initialization
-- The current isolated native legacy-client smoke must set `ForceCoreContext = 1` in a flat `springsettings.cfg` because the Apple OpenGL path on this machine does not provide a higher-version compatibility context during SDL context creation
-- The current isolated native legacy render-validation smoke also depends on the automation-only config keys `ValidationRenderCapture = 1` and `ValidationRenderCaptureFrame = 30` to trigger the engine-side screenshot hook at a deterministic frame
-- The current BAR real-content smoke depends on `tools/pr-downloader` plus network access to fetch the BAR package and map archives unless a warmed `RECOIL_BAR_CONTENT_CACHE_DIR` is provided
-- The current BAR real-content smoke defaults to `RECOIL_BAR_CAPTURE_FRAME=60` and uses a warmed `RECOIL_BAR_CONTENT_CACHE_DIR` when available to avoid redownloading content during repeat validation
-- For repeat BAR render validation, do not treat the moving `rapid://byar:test` head as a stable reference; warm a cache once, then rerun against the same cached BAR revision or pin the exact validated content version in the same change set
-- `SDL_VIDEODRIVER=offscreen` is not a substitute for a real GUI session on this machine: SDL reports a synthetic `1024x768` mode, but `CreateSDLWindow` still fails with `Could not initialize OpenGL / GLES library`
-- If additional host tools or launch-context requirements are discovered for GUI validation on other Apple Silicon machines, add the exact steps here immediately
-
-Current native macOS bring-up work should treat GitHub issue `#936` as required historical context:
-
-- Reference: `https://github.com/beyond-all-reason/RecoilEngine/issues/936`
-- Scope relevance: prior attempts to get RecoilEngine building and running on macOS, including historical blockers, workarounds, and dead ends
-- Expectation: before proposing or implementing native macOS or Apple Silicon build changes, review the full issue timeline and reconcile new work against it
-
-## Phase-1 Native Apple Silicon Bring-Up Plan
-
-Phase 1 should target a native macOS `arm64` bring-up for `engine-headless` or `engine-dedicated` first. Do not treat the full graphical client as the initial milestone.
-
-### Phase-1 Goal
-
-Get the engine configuring and building natively on this MacBook Pro for a non-graphical target, with enough validation to prove that Apple Silicon portability work is moving in the right direction.
-
-### Phase-1 Non-Goals
-
-- Do not make the full native macOS graphical client the first milestone
-- Do not assume Zink, MoltenVK, or a Vulkan-based workaround is the primary phase-1 solution
-- Do not accept a Rosetta-only or x86_64-only result as completion for this phase
-
-### Phase-1 Work Sequence
-
-1. SIMD and floating-point portability:
-   audit all x86/SSE assumptions, add a compatibility layer for SIMD headers if needed, and adapt the build so Apple Silicon can use an `arm64` path instead of forcing `STREFLOP_SSE`
-2. Streflop and sync-sensitive math:
-   use the prior arm64 work discussed in issue `#936` and PR `#2540` as reference material, but re-evaluate it carefully for determinism and current-tree compatibility before adopting it
-3. CMake and dependency scoping:
-   remove or narrow global requirements that block non-graphical targets on macOS, especially client-only dependencies such as DevIL and X11
-4. Apple-specific cleanup:
-   remove stale x86_64-only assumptions in mac platform code and build flags, and prefer explicit Apple Silicon-compatible compiler and linker settings
-5. First native build milestone:
-   get `engine-headless` or `engine-dedicated` to configure and compile natively on macOS `arm64`
-6. Validation:
-   run the most relevant math, sync-adjacent, and headless-target tests that can execute on this machine, and document any determinism concerns before expanding scope
-7. Only after phase 1:
-   re-evaluate whether the graphical client should target OpenGL core-profile cleanup, a larger renderer refactor, or a separate Vulkan or Metal-oriented effort
-
-### Phase-1 Success Criteria
-
-- Native `arm64` CMake configure succeeds on this machine without relying on Rosetta
-- A non-graphical engine target builds successfully on macOS
-- The initial Apple Silicon math and determinism risks are documented with concrete test results
-- Remaining blockers for a future graphical-client milestone are listed explicitly rather than mixed into phase 1
-
-## Phase-1 Implementation Status
-
-Current Apple Silicon phase-1 progress on this machine has moved beyond planning and into a working native dedicated-server bring-up.
-
-### Verified current status
-
-- Native macOS `arm64` CMake configure succeeds for a dedicated-only build on this MacBook Pro
-- `engine-headless` now builds as a native Apple Silicon Mach-O executable on this machine
-- `engine-dedicated` now builds as a native Apple Silicon Mach-O executable on this machine
-- `engine-legacy` now builds as a native Apple Silicon Mach-O executable on this machine
-- Native targeted math-adjacent test executables `test_Matrix44f` and `test_Float3` both build and pass on this machine
-- Native headless runtime smoke gets through script parsing, blank-map generation, archive checksum acquisition, local server startup, and demo recording in an isolated macOS data dir
-- Native dedicated runtime smoke now gets through script parsing, blank-map generation, archive checksum acquisition, UDP socket bind, server startup, and demo recording in an isolated macOS data dir
-- Native legacy blank-map GUI smoke now gets through SDL init, OpenGL init, demo recording, and the configured stabilization window in an isolated macOS data dir
-- Native legacy render-validation smoke now captures a blank-map screenshot and a repeat capture matches the current baseline image through `test/validation/compare-render-images.sh`
-- The shared shader-preprocessor regression test `test_ShaderPreprocessorUtils` now builds and passes on this machine
-
-### Current phase-1 limitations
-
-- Streflop is currently disabled for the native Apple Silicon dedicated-only bring-up path, so multiplayer determinism is not yet validated and phase 1 must not be treated as sync-safe completion
-- The native macOS graphical client now builds, but automated runtime smoke still requires an interactive macOS desktop session with visible displays; in the current automation context even `launchctl bsexec` against the Aqua login session can still fail before OpenGL initialization with `The video driver did not add any displays`
-- The current Apple core-profile client path still has known rendering gaps after startup, including the optional uniform-constant UBO path, sky shader parity, and other compatibility-profile shader surfaces that have not been fully modernized yet
-- The current automated render-parity proof only covers the blank-map fixture used by `test/validation/run-legacy-render-smoke.sh`; it is a narrow regression harness, not yet a substitute for broader gameplay or replay-based graphical parity testing
-- BAR real-content startup now reaches a stable automated validation fixture on native Apple Silicon: a repeated BAR capture at the current fixture frame matches within the documented BAR-specific image tolerance, but that harness still narrows the scene and does not yet prove full gameplay rendering parity
-- BAR content still loses a number of optional GL4 widgets on this macOS OpenGL 4.1 path because BAR ships shaders that truly require SSBO support beyond Apple OpenGL 4.1; the earlier non-SSBO `Contrast Adaptive Sharpen` failure is no longer present in the current verified BAR smoke, and the earlier Apple core-profile failures for `ShadowGenFragProg`, `GrassShaderGL4`, `AoE Napalm Shader`, `GenBrdfLut`, `GenEnvLut`, `ShieldSphereColor`, and `Bloom Combine Shader` are also no longer present
-- The legacy benchmark script at `tools/benchmark/script_benchmark.txt` is not a valid Apple Silicon dedicated smoke target because it assumes external game, map, and AI content that is not part of this phase-1 fixture
+- Required historical context: GitHub issue `#936` (`https://github.com/beyond-all-reason/RecoilEngine/issues/936`)
+- Apple Silicon/macOS work must stay additive and maintainable. Do not regress existing Linux, Windows, or `x86_64` behavior to make the new port work.
+- Record newly discovered Apple Silicon host dependencies in `MACOS_APPLE_SILICON_SETUP.md` in the same change set that introduces them.
 
 ## Dedicated Smoke Verification Contract
 
@@ -262,8 +137,13 @@ The BAR real-content render-validation path is a broader native macOS client fix
 
 - Use `test/validation/run-bar-realcontent-smoke.sh` with a warmed `RECOIL_BAR_CONTENT_CACHE_DIR` when possible so repeat validation does not depend on re-downloading the BAR package and map archives
 - Use the isolated BAR validation fixture staged by the smoke wrapper instead of reusing a non-isolated local Spring data dir
+- Keep BAR validation engine-owned and repo-local; do not reintroduce an external macOS window-observation backend
 - Keep the current validation capture frame at `60` unless the replacement frame is re-verified and documented in this file
-- Treat the currently verified BAR fixture as the cached game `Beyond All Reason test-29615-10cd8f9` on `Angel Crossing 1.4`; if the BAR content revision changes, refresh the baseline and record the new exact version in this file
+- Only enable `RECOIL_BAR_PRESENT_CAPTURE_FRAME_COUNT` for BAR fixtures that explicitly need final-present capture review beyond the normal validation screenshot
+- Treat the currently verified BAR fixture as the cached game `Beyond All Reason test-29633-5588b75` on `Angel Crossing 1.4`; if the BAR content revision changes, refresh the baseline and record the new exact version in this file
+- Keep the current validation camera settings at `ValidationRenderCaptureCenterCamera = 1`, `ValidationRenderCapturePlayerStartCamera = 0`, `ValidationRenderCaptureCameraHeight = 1200`, and `ValidationRenderCaptureCameraBackOffset = 900` unless a replacement camera path is re-verified and documented in this file
+- Keep staging `cont/LuaUI` into the isolated BAR fixture so the raw proxy widgets in `cont/LuaUI/Widgets/` can patch BAR's archived `gui_scavstatspanel.lua` and `gui_top_bar.lua` through `cont/LuaUI/Headers/bar_widget_proxy_loader.lua`
+- Keep staging the minimal validation-only `test/validation/LuaUI/Config/BYAR.lua` as `LuaUI/Config/BYAR.lua` and `LuaAutoEnableUserWidgets = 1` so the BAR fixture keeps a narrow, repo-pinned `Top Bar` and user-widget ordering surface instead of inheriting a full host-generated BAR config
 
 ### Pass criteria
 
@@ -278,11 +158,15 @@ The BAR real-content render-validation path is a broader native macOS client fix
 
 - Prefer `test/validation/run-bar-realcontent-smoke.sh` for repeatable native BAR real-content validation on this machine
 - The wrapper should keep using `test/validation/run-smoke-wrapper.sh` so failed BAR runs do not leave behind `spring*`, `ReportCrash`, or `CrashReporterSupportHelper` processes
+- `test/validation/run-bar-playability-smoke.sh` and `test/validation/run-bar-observation-smoke.sh` should keep using engine-owned final-present capture only; their current contract is to stream frames from `ValidationPresentCapture*` and select the first non-black frame through `test/validation/select-first-nonblack-render-frame.sh`
+- On this machine, the latest fresh BAR playability run (`recoil-bar-realcontent-smoke.UXMZK8`) still reported `Diff pixels: 492173` and `Max channel delta: 164` between the authoritative validation screenshot and the first selected non-black present frame, so the selected-present artifact is still supplementary and the normal validation screenshot remains the authoritative BAR comparison target
+- Use `test/validation/analyze-render-image.sh` on BAR screenshots or selected present frames when a run is under review; the current playability gate should explicitly check for top-band HUD contrast, expected bottom-left minimap/HUD occupancy, left-middle misplacement, and overall composition skew instead of relying on visual inspection alone
+- Do not treat those selected present frames as proof of actual on-screen playability on this machine unless both the image analyzer and manual review agree that the expected HUD and world composition are present
 - Treat the current BAR fixture as a regression gate for the documented narrowed scene only; it is not yet a substitute for broader gameplay, replay, or full-UI rendering parity checks
 
 ## Apple Silicon Porting Principles
 
-Apple Silicon and native macOS support should be implemented as an additive, maintainable extension of the current codebase. Do not degrade existing Linux, Windows, or x86_64 behavior in order to make the new port work.
+Apple Silicon and native macOS support should be implemented as an additive, maintainable extension of the current codebase. Do not degrade existing Linux, Windows, or x86_64 behavior in order to make the new port work. Treat previously supported platforms and their current working code paths as the baseline to preserve: reuse existing implementations and compatibility surfaces where they already behave correctly, and prefer narrow Apple-specific adaptation over replacing shared behavior outright.
 
 ### Required documentation for temporary disables
 
@@ -333,8 +217,14 @@ Do not silently disable subsystems just to get a build through. If a temporary d
 - Legacy GLSL compatibility layer:
   the Apple core-profile path now uses a localized legacy-GLSL translation layer for both engine and Lua shaders instead of hard-failing when BAR or engine shaders still rely on compatibility-profile GLSL tokens and undefined non-`GL_*` conditional macros.
   Why: Apple OpenGL 4.1 core profile rejects compatibility-profile suffixes, legacy `gl_*` shader symbols, and a number of loose GLSL preprocessor assumptions that existing engine and BAR shaders still make.
-  Verification impact: current BAR real-content smoke now gets past the earlier Apple core-profile failures for `ShadowGenFragProg`, `GrassShaderGL4`, `AoE Napalm Shader`, `GenBrdfLut`, `GenEnvLut`, `ShieldSphereColor`, `Bloom Combine Shader`, and the earlier `Contrast Adaptive Sharpen` comment-parsing failure, but repeated BAR capture still differs and the layer does not yet prove full gameplay rendering parity.
+  Verification impact: current BAR real-content smoke now gets past the earlier Apple core-profile failures for `ShadowGenFragProg`, `GrassShaderGL4`, `AoE Napalm Shader`, `GenBrdfLut`, `GenEnvLut`, `ShieldSphereColor`, `Bloom Combine Shader`, the earlier `Contrast Adaptive Sharpen` preprocessor failure, and the earlier `SMFFragProg` shadow sampler compile failure because `LegacyGlslCompat.h` now adapts legacy `shadow2DProj` through `textureProj`. BAR capture still relies on the documented BAR-specific image tolerance, and the layer does not yet prove full gameplay rendering parity.
   Exit criteria: keep the translation localized and additive while BAR render validation expands; either prove the translated surface matches known-good references strongly enough to justify the adapter long-term or replace the remaining translated surfaces with validated cross-platform shader updates.
+
+- Shader preprocessor conditional-defaulting:
+  engine and Lua shader compilation currently keep the additive undefined-macro defaulting path, but that path is now shared through `Rendering/Shaders/ShaderPreprocessorUtils.h` and strips comments plus skips `defined(...)` operands before collecting identifiers.
+  Why: BAR and existing engine shader sources still rely on undefined non-`GL_*` conditional macros in some places, but the earlier local parsers were loose enough to corrupt valid GLSL by inventing defaults from comment text or `defined()` operands.
+  Verification impact: current BAR real-content smoke and `test_ShaderPreprocessorUtils` now prove the earlier `Contrast Adaptive Sharpen` failure mode is fixed for both engine and Lua shader compilation, but the broader automatic-defaulting behavior still remains a compatibility fallback rather than proof that every shader declares its capability surface explicitly.
+  Exit criteria: keep the shared preprocessor helper only as long as current shader sources still depend on automatic undefined-macro defaults, and narrow or remove that fallback once the affected shader surfaces are explicit enough to compile without it.
 
 - Projectile effects shader path:
   the Apple core-profile path now uses a localized matrix-uniform adapter for the `ProjFX*` shaders instead of relying on `gl_ModelViewMatrix` and `gl_ProjectionMatrix`.
@@ -348,10 +238,34 @@ Do not silently disable subsystems just to get a build through. If a temporary d
   Verification impact: BAR real-content smoke now gets past the prior Lua VAO capability failures and can render a frame, but performance and behavioral parity for these emulated draw paths are not yet treated as fully proven across broader gameplay scenes.
   Exit criteria: verify the additive draw-emulation path against known-good references for the affected widgets and keep it localized so existing higher-capability platforms continue to use their native fast path unchanged.
 
+- BAR raw-widget proxy surface:
+  the BAR real-content fixture currently stages raw LuaUI widget proxies from `cont/LuaUI/Widgets/` that shadow BAR's archived `gui_scavstatspanel.lua` and `gui_top_bar.lua` and patch them through `cont/LuaUI/Headers/bar_widget_proxy_loader.lua`.
+  Why: the currently validated BAR content revision still carries widget-source defects that are narrower and cheaper to patch through repo-local raw overrides than to paper over inside shared engine code or by forking BAR widget names and ordering.
+  Verification impact: a successful BAR smoke currently proves the native macOS client plus these localized raw widget proxies can boot BAR content and capture the validation frame; it does not yet prove that the unmodified BAR archive widgets run cleanly on this fixture.
+  Exit criteria: remove each raw proxy once the corresponding BAR widget source is fixed upstream or no longer needed for the validated fixture, then re-run the BAR smoke and document the narrower override surface in this file.
+
+- BAR health-bars fallback:
+  the macOS Apple Silicon BAR validation fixture now shadows `gui_healthbars_gl4.lua` with a repo-local raw proxy that enables the engine `showhealthbars` / `showrezbars` status-bar path and removes the GL4 widget on load.
+  Why: BAR's `Health Bars GL4` widget currently hard-fails on Apple OpenGL 4.1 because its shader path still depends on unsupported GL4-era storage-buffer behavior, but the engine already ships a simpler status-bar path that is better than losing health and rez bars entirely during playability validation.
+  Verification impact: until a successful GUI-session BAR run re-verifies this proxy, it should be treated as a maintainable fallback rather than proof that the original BAR GL4 health-bar widget now works on macOS.
+  Exit criteria: replace this fallback only after either the BAR GL4 health-bar widget runs correctly on Apple OpenGL 4.1 or a stronger cross-platform replacement path is verified for the macOS fixture.
+
+- BAR SSBO overlay fallbacks:
+  the macOS Apple Silicon BAR validation fixture now shadows `gui_selectedunits_gl4.lua`, `gui_unit_energy_icons.lua`, `gui_allyselectedunits.lua`, `gfx_paralyze_effect.lua`, `gui_unit_group_number.lua`, `gui_rank_icons_gl4.lua`, `gui_sensor_ranges_radar_preview.lua`, `gui_sensor_ranges_jammer.lua`, `gui_sensor_ranges_sonar.lua`, `gui_sensor_ranges_radar.lua`, `gui_sensor_ranges_los.lua`, `gui_resurrection_halos_gl4.lua`, `gfx_airjets_gl4.lua`, `gui_ground_ao_plates_features_gl4.lua`, and `gfx_orb_effects_gl4.lua` with repo-local raw proxies that log a warning and remove the original GL4 widgets on load.
+  Why: these BAR overlays and visual-effect widgets currently fail at startup on Apple OpenGL 4.1 because they depend on `GL_ARB_shader_storage_buffer_object`, and disabling them through repo-local widget proxies is a smaller, more maintainable additive surface than widening the shared renderer just to preserve optional overlays during the Apple Silicon bring-up.
+  Verification impact: until a successful GUI-session BAR run re-verifies these proxies, they should be treated as documented degradation paths rather than proof that the original BAR GL4 widgets now work on macOS.
+  Exit criteria: replace each proxy only after the corresponding BAR widget runs correctly on Apple OpenGL 4.1 or a stronger cross-platform fallback is verified for the macOS fixture.
+
+- BAR LuaUI config dependency:
+  `test/validation/run-bar-realcontent-smoke.sh` currently stages `cont/LuaUI`, copies the minimal validation-only `test/validation/LuaUI/Config/BYAR.lua` into `LuaUI/Config/BYAR.lua`, and sets `LuaAutoEnableUserWidgets = 1`, so the validated widget set, `Top Bar` ordering, and BAR user-widget path now follow a narrower repo-pinned fixture instead of BAR's larger generated runtime config.
+  Why: the current fixture still wants BAR's user-widget path enabled, but it now needs a minimal deterministic `BYAR.lua` so validation does not drift with prior BAR sessions or host-saved widget state while the repo-local raw-widget hotfixes stay in place.
+  Verification impact: BAR smoke currently proves this hybrid path of repo-local raw overrides plus the staged minimal validation `BYAR.lua`, not a fully user-config-independent BAR bootstrap or a proof that every BAR widget ordering path is stable without the pinned fixture.
+  Exit criteria: keep the staged validation-only `BYAR.lua` narrow and documented until BAR smoke remains stable without it or until a stronger long-term validation config story replaces this minimal pinned fixture.
+
 - BAR GL4 widget surface:
   BAR real-content startup currently disables a number of optional GL4 Lua widgets and effects on the native macOS Apple Silicon path.
   Why: Apple OpenGL tops out at GLSL 4.10 and does not expose SSBO support on this path, while BAR currently ships several Lua GL4 shaders and widgets that require true SSBO-backed `buffer` blocks or still assume newer or legacy GLSL/profile semantics than the current additive translation layer covers.
-  Verification impact: a successful BAR real-content smoke currently proves the native macOS client can boot BAR content and render a frame, but it does not yet prove parity for the affected higher-end Lua GL4 widgets, UI, or post-processing behavior. As of the current verified BAR smoke, the still-failing or removed surfaces include `ResurrectionHalosShader GL4`, `selectedUnitsGroundShader GL4`, `energy iconsShader GL4`, `Health Bars Shader GL4`, `JetShader GL4`, `Ground AO Plates FeaturesShader GL4`, `orbShader GL4`, `allySelectedUnitsShader GL4`, `unitGroupsShader GL4`, `Rank IconsShader GL4`, and the sensor-range stencil shaders.
+  Verification impact: these are current BAR content and runtime parity gaps rather than engine build blockers. A successful BAR real-content smoke currently proves the native macOS client can boot BAR content and render a frame, but it does not yet prove parity for the affected higher-end Lua GL4 widgets, UI, or post-processing behavior. As of the current verified BAR smoke, the still-failing or removed surfaces include `ResurrectionHalosShader GL4`, `selectedUnitsGroundShader GL4`, `energy iconsShader GL4`, `Health Bars Shader GL4`, `JetShader GL4`, `Ground AO Plates FeaturesShader GL4`, `orbShader GL4`, `allySelectedUnitsShader GL4`, `unitGroupsShader GL4`, `Rank IconsShader GL4`, and the sensor-range stencil shaders.
   Exit criteria: add additive compatibility adapters or capability-translation fixes that let the affected BAR Lua GL4 paths either run correctly on Apple OpenGL 4.1 or degrade in a documented, verified way against a known-good reference, and remove widgets from this note only after the render smoke demonstrates the change rather than assuming it.
 
 - BAR validation compare tolerance:
@@ -360,11 +274,29 @@ Do not silently disable subsystems just to get a build through. If a temporary d
   Verification impact: a successful BAR real-content compare now proves near-identical output for the current narrowed fixture, not byte-for-byte identity.
   Exit criteria: remove the BAR-specific tolerance once exact repeated capture becomes stable, or replace it with a stronger reference-backed parity mechanism that makes the tolerance unnecessary.
 
+- BAR engine-owned capture backend:
+  BAR validation must stay inside the engine and repo-local smoke harnesses; external host window-observation helpers are no longer part of the supported validation contract.
+  Why: the Apple Silicon port needs a reproducible, maintainable validation story that travels with the repo instead of depending on host TCC permissions or extra desktop automation tools.
+  Verification impact: BAR validation currently proves what the engine-owned screenshot and final-present capture paths can reproduce for the narrowed fixture, not an independently observed host window.
+  Exit criteria: keep the validation story engine-owned and repo-local, and strengthen the BAR render output itself until the analyzer plus manual review agree that the narrowed fixture shows the expected HUD and world composition.
+
+- BAR engine-backed playability capture:
+  `test/validation/run-bar-playability-smoke.sh` and `test/validation/run-bar-observation-smoke.sh` currently rely on the engine screenshot hook plus streamed `ValidationPresentCapture*` frames, then select the first non-black present frame through `test/validation/select-first-nonblack-render-frame.sh`.
+  Why: the playability wrappers now need an engine-owned approximation of what reaches the visible window, and the earliest present frames can still be all black before the BAR scene is ready.
+  Verification impact: a successful engine-backed playability capture now proves that the native macOS client can render, write, and post-process BAR validation frames under the playability fixture, and that the present path can match the normal screenshot hook; it still does not prove playability unless the resulting BAR frame also passes the repo-local HUD and composition checks.
+  Exit criteria: keep the current engine-owned capture flow, but bring the BAR frame itself to a state where the analyzer plus manual review show a believable top bar, sane minimap/HUD placement, and a readable world view for the narrowed fixture.
+
 - Validation render scope:
   `ValidationRenderCapture` currently suppresses screen-space UI, cursor, and screen-post passes during automated render comparison.
   Why: the current Apple Silicon/macOS graphical validation effort is still stabilizing repeatable world-scene captures first, and these screen-space surfaces remain more sensitive to session timing and host interaction than the world draw.
   Verification impact: passing automated render validation currently proves the captured world scene matches the current baseline for the covered fixture, but it does not yet prove parity for UI, cursor, or post-processing output.
   Exit criteria: restore these surfaces to automated parity coverage once they have a stable fixture or a dedicated comparison harness that can verify them without reintroducing flaky captures.
+
+- Validation capture camera path:
+  the automated render-capture path currently relies on explicit camera steering through `ValidationRenderCaptureCenterCamera`, `ValidationRenderCapturePlayerStartCamera`, `ValidationRenderCaptureCameraHeight`, and `ValidationRenderCaptureCameraBackOffset`, and the BAR real-content fixture uses the center-camera branch rather than BAR's own startup camera state.
+  Why: BAR startup camera behavior and local player start positions are not stable enough for a repeatable regression frame on this machine, so the validation hook now forces a deterministic center-map capture path with documented offsets.
+  Verification impact: successful BAR render validation currently proves the documented center-camera scene matches the baseline within tolerance, not that arbitrary startup-camera scenes or player-start-camera captures are already stable on this macOS path.
+  Exit criteria: keep the explicit camera steering until BAR validation no longer depends on it or until a broader replay or scenario-based capture harness can verify camera parity without relying on a forced center-map view.
 
 - Sky rendering:
   `ISky::SetSky` can currently fail to create `ModernSky` on the Apple core-profile path and fall back to `NullSky`.
@@ -389,14 +321,18 @@ Do not silently disable subsystems just to get a build through. If a temporary d
 - Prefer platform-specific hooks, compatibility layers, adapters, or translation shims over invasive rewrites of shared code
 - Keep existing code paths intact for current supported builds unless there is a clear cross-platform cleanup that reduces complexity without changing behavior
 - Default behavior for existing targets should remain unchanged on this git commit unless a change is intentionally validated for all affected platforms
+- Reuse existing working code paths, renderer surfaces, and validation hooks wherever they already provide the closest practical behavior on supported platforms; prefer adapting around them over cloning or replacing them
 - When x86/SSE-specific code blocks Apple Silicon support, prefer introducing a narrow abstraction layer such as a SIMD compatibility header or platform-selected implementation file instead of scattering `#ifdef` logic everywhere
 - When macOS graphics or windowing behavior differs from other platforms, isolate that behavior behind platform-specific entry points or renderer adapters where practical
+- Minimize the changed surface area of each Apple Silicon/macOS step so previously supported platforms continue to exercise the same implementation unless a broader change is deliberate and verified
 - Do not remove or weaken existing implementations just because Apple Silicon requires a different path
+- Aim for the closest practical behavior to the existing supported platforms, and document any remaining drift rather than widening the rewrite surface prematurely
 - If a compatibility or translation layer is introduced, it must be documented clearly enough that future maintainers can understand what it preserves, what it translates, and how it is verified
 
 ### Maintainability rules
 
 - Keep Apple Silicon and macOS-specific logic localized to the smallest reasonable surface area
+- Prefer reusing an existing supported implementation plus a narrow adapter over introducing a second full path that duplicates behavior
 - Prefer compile-time selection of platform implementations over runtime branching when behavior is platform-dependent and stable
 - Avoid large all-at-once refactors when an incremental adapter can unlock the next validation milestone
 - If an additive layer becomes too complex, stop and re-evaluate the design before pushing the complexity deeper into shared engine code

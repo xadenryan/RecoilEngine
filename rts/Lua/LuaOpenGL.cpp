@@ -84,6 +84,24 @@
 CONFIG(bool, LuaShaders).defaultValue(true).headlessValue(false).safemodeValue(false);
 CONFIG(int, DeprecatedGLWarnLevel).defaultValue(0).headlessValue(0).safemodeValue(0);
 
+namespace {
+	std::string GetLuaCallSite(lua_State* L, int stackLevel = 1)
+	{
+		lua_Debug ar = {};
+
+		if (lua_getstack(L, stackLevel, &ar) == 0)
+			return {};
+
+		if (lua_getinfo(L, "nSl", &ar) == 0)
+			return {};
+
+		if (ar.currentline > 0)
+			return fmt::format("{}:{}", ar.short_src, ar.currentline);
+
+		return ar.short_src;
+	}
+}
+
 /*** Callouts for OpenGL API
  *
  * Only setters and getters for OpenGL usage in Recoil, see `GL` for constants.
@@ -318,9 +336,9 @@ bool LuaOpenGL::PushEntries(lua_State* L)
 	REGISTER_LUA_CFUNC(Blending);
 	REGISTER_LUA_CFUNC(BlendEquation);
 	REGISTER_LUA_CFUNC(BlendFunc);
-	if (GLAD_GL_EXT_blend_equation_separate)
+	if (glad_glBlendEquationSeparate != nullptr)
 		REGISTER_LUA_CFUNC(BlendEquationSeparate);
-	if (GLAD_GL_EXT_blend_func_separate)
+	if (glad_glBlendFuncSeparate != nullptr)
 		REGISTER_LUA_CFUNC(BlendFuncSeparate);
 
 	REGISTER_LUA_CFUNC(Material);
@@ -5589,7 +5607,7 @@ int LuaOpenGL::PushMatrix(lua_State* L)
 		luaL_error(L, "gl.PushMatrix takes no arguments");
 	}
 
-	if (!GetLuaContextData(L)->glMatrixTracker.PushMatrix())
+	if (!GetLuaContextData(L)->glMatrixTracker.PushMatrix(GetLuaCallSite(L)))
 		luaL_error(L, "Matrix stack overflow");
 	glPushMatrix();
 
@@ -6142,10 +6160,10 @@ int LuaOpenGL::CreateList(lua_State* L)
 
 	// build the list with the specified lua call/args
 	glNewList(list, GL_COMPILE);
-	SMatrixStateData prevMSD = GetLuaContextData(L)->glMatrixTracker.PushMatrixState(true);
+	SMatrixTrackerStateData prevMSD = GetLuaContextData(L)->glMatrixTracker.PushState(true);
 	const int error = lua_pcall(L, (args - 1), 0, 0);
 	SMatrixStateData matData = GetLuaContextData(L)->glMatrixTracker.GetMatrixState();
-	GetLuaContextData(L)->glMatrixTracker.PopMatrixState(prevMSD, false);
+	GetLuaContextData(L)->glMatrixTracker.PopState(prevMSD);
 	glEndList();
 
 	if (error != 0) {

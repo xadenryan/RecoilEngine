@@ -118,6 +118,7 @@ private:
 	void DrawInputReceivers();
 	void DrawInputText();
 	void DrawInterfaceWidgets();
+	void ApplyValidationRenderCaptureCamera();
 	void PrepareValidationRenderCapture();
 	void MaybeRunValidationRenderCapture();
 
@@ -183,9 +184,16 @@ public:
 	bool showClock = true;
 	bool showSpeed = true;
 	bool validationRenderCapture = false;
+	bool validationRenderCaptureHideInterface = true;
+	bool validationRenderCaptureCenterCamera = true;
+	bool validationRenderCapturePlayerStartCamera = false;
+	bool validationRenderCaptureSceneOnly = true;
+	bool validationRenderCaptureHideCursor = true;
 	bool validationRenderCapturePrepared = false;
 	bool validationRenderCaptured = false;
 	int validationRenderCaptureFrame = 30;
+	float validationRenderCaptureCameraHeight = 1200.0f;
+	float validationRenderCaptureCameraBackOffset = 900.0f;
 
 	bool skipping = false;
 	bool playing = false;

@@ -9,6 +9,7 @@
 #include "GlobalRendering.h"
 #include "GlobalRenderingInfo.h"
 #include "Rendering/VerticalSync.h"
+#include "Rendering/Screenshot.h"
 #include "Rendering/GL/StreamBuffer.h"
 #include "Rendering/GL/RenderBuffers.h"
 #include "Rendering/GL/myGL.h"
@@ -785,8 +786,9 @@ void CGlobalRendering::SwapBuffers(bool allowSwapBuffers, bool clearErrors)
 		RenderBuffer::SwapRenderBuffers(); //all RBs are swapped here
 		IStreamBufferConcept::PutBufferLocks();
 
-		//https://stackoverflow.com/questions/68480028/supporting-opengl-screen-capture-by-third-party-applications
-		glBindFramebuffer(GL_READ_FRAMEBUFFER_EXT, 0);
+		#if !defined(__APPLE__)
+			CaptureValidationPresentFrameSequence(drawFrame, false);
+		#endif
 		
 		#ifdef _WIN32
 			using DwmFlushT = HRESULT(WINAPI*)();

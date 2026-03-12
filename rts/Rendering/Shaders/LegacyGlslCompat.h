@@ -33,6 +33,7 @@ namespace Shader::LegacyGlslCompat {
 		bool usesFog = false;
 		bool usesTexture2D = false;
 		bool usesTextureCube = false;
+		bool usesShadow2DProj = false;
 
 		std::array<bool, 8> usesMultiTexCoord = {};
 	};
@@ -140,6 +141,7 @@ namespace Shader::LegacyGlslCompat {
 		usage.usesFog = ContainsText(source, "gl_Fog");
 		usage.usesTexture2D = ContainsText(source, "texture2D(");
 		usage.usesTextureCube = ContainsText(source, "textureCube(");
+		usage.usesShadow2DProj = ContainsText(source, "shadow2DProj(");
 
 		for (uint32_t texUnit = 0; texUnit < usage.usesMultiTexCoord.size(); ++texUnit)
 			usage.usesMultiTexCoord[texUnit] = ContainsText(source, "gl_MultiTexCoord" + std::to_string(texUnit));
@@ -166,7 +168,8 @@ namespace Shader::LegacyGlslCompat {
 			usage.usesNormalMatrix ||
 			usage.usesFog ||
 			usage.usesTexture2D ||
-			usage.usesTextureCube;
+			usage.usesTextureCube ||
+			usage.usesShadow2DProj;
 
 		for (bool usesTexCoord : usage.usesMultiTexCoord)
 			usage.usesLegacySurface = usage.usesLegacySurface || usesTexCoord;
@@ -247,6 +250,8 @@ namespace Shader::LegacyGlslCompat {
 			preamble += "#define texture2D texture\n";
 		if (usage.usesTextureCube)
 			preamble += "#define textureCube texture\n";
+		if (usage.usesShadow2DProj)
+			preamble += "#define shadow2DProj(tex, coord) vec4(textureProj(tex, coord))\n";
 
 		return preamble;
 	}

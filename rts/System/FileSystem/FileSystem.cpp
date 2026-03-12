@@ -642,6 +642,8 @@ namespace Impl {
 	void FindFilesStd(std::vector<std::string>& matches, const std::string& dataDir, const std::string& dirStr, const spring::regex& regexPattern, int flags)
 	{
 		const auto dirFullStr = FileSystem::ForwardSlashes(dataDir + dirStr);
+		const auto queryDirStr = FileSystem::ForwardSlashes(dirStr);
+		const bool returnAbsolutePaths = FileSystem::IsAbsolutePath(queryDirStr);
 
 		auto dir = Recoil::filesystem::u8path(dirFullStr);
 		if (!fs::exists(dir))
@@ -671,6 +673,16 @@ namespace Impl {
 
 				if (spring::regex_match(StoreUTF8AsString(entryPathFnStr), regexPattern)) {
 					auto entryPathStr = entry.path().generic_u8string();
+
+					if (!returnAbsolutePaths) {
+						auto relativePathStr = entry.path().lexically_relative(dir).generic_u8string();
+						auto prefixPathStr = Recoil::filesystem::u8path(queryDirStr).generic_u8string();
+
+						if (!prefixPathStr.empty() && prefixPathStr.back() != u8'/')
+							prefixPathStr += u8'/';
+
+						entryPathStr = prefixPathStr + relativePathStr;
+					}
 
 					// the previous convention to add a trailing slash
 					if (isDir && !entryPathStr.empty() && entryPathStr.back() != u8'/') {

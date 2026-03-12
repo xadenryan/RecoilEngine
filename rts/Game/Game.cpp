@@ -149,6 +149,13 @@ CONFIG(bool, ShowClock).defaultValue(true).headlessValue(false).description("Dis
 CONFIG(bool, ShowSpeed).defaultValue(false).description("Displays current game speed.");
 CONFIG(bool, ValidationRenderCapture).defaultValue(false).headlessValue(false).description("For automated validation only: capture a screenshot after entering the game and then exit.");
 CONFIG(int, ValidationRenderCaptureFrame).defaultValue(30).minimumValue(1).description("For automated validation only: the first game frame at or after which the validation screenshot should be captured.");
+CONFIG(bool, ValidationRenderCaptureHideInterface).defaultValue(true).headlessValue(false).description("For automated validation only: hide the interface before capturing the validation screenshot.");
+CONFIG(bool, ValidationRenderCaptureCenterCamera).defaultValue(true).headlessValue(false).description("For automated validation only: move the camera to the map center before capturing the validation screenshot.");
+CONFIG(bool, ValidationRenderCapturePlayerStartCamera).defaultValue(false).headlessValue(false).description("For automated validation only: move the camera above the local player's start position before capturing the validation screenshot.");
+CONFIG(bool, ValidationRenderCaptureSceneOnly).defaultValue(true).headlessValue(false).description("For automated validation only: exclude screen-space UI and post-processing so comparisons focus on the world scene.");
+CONFIG(bool, ValidationRenderCaptureHideCursor).defaultValue(true).headlessValue(false).description("For automated validation only: suppress cursor rendering in the captured validation frame.");
+CONFIG(float, ValidationRenderCaptureCameraHeight).defaultValue(1200.0f).minimumValue(1.0f).headlessValue(1200.0f).description("For automated validation only: camera height offset used by the validation capture cameras.");
+CONFIG(float, ValidationRenderCaptureCameraBackOffset).defaultValue(900.0f).minimumValue(0.0f).headlessValue(900.0f).description("For automated validation only: positive Z offset used by the validation capture cameras.");
 CONFIG(int, ShowPlayerInfo).defaultValue(1).headlessValue(0);
 CONFIG(float, GuiOpacity).defaultValue(0.8f).minimumValue(0.0f).maximumValue(1.0f).description("Sets the opacity of the built-in Spring UI. Generally has no effect on LuaUI widgets. Can be set in-game using shift+, to decrease and shift+. to increase.");
 CONFIG(std::string, InputTextGeo).defaultValue("");
@@ -252,6 +259,13 @@ CGame::CGame(const std::string& mapFileName, const std::string& modFileName, ILo
 	showSpeed = configHandler->GetBool("ShowSpeed");
 	validationRenderCapture = configHandler->GetBool("ValidationRenderCapture");
 	validationRenderCaptureFrame = configHandler->GetInt("ValidationRenderCaptureFrame");
+	validationRenderCaptureHideInterface = configHandler->GetBool("ValidationRenderCaptureHideInterface");
+	validationRenderCaptureCenterCamera = configHandler->GetBool("ValidationRenderCaptureCenterCamera");
+	validationRenderCapturePlayerStartCamera = configHandler->GetBool("ValidationRenderCapturePlayerStartCamera");
+	validationRenderCaptureSceneOnly = configHandler->GetBool("ValidationRenderCaptureSceneOnly");
+	validationRenderCaptureHideCursor = configHandler->GetBool("ValidationRenderCaptureHideCursor");
+	validationRenderCaptureCameraHeight = configHandler->GetFloat("ValidationRenderCaptureCameraHeight");
+	validationRenderCaptureCameraBackOffset = configHandler->GetFloat("ValidationRenderCaptureCameraBackOffset");
 
 	speedControl = configHandler->GetInt("SpeedControl");
 
@@ -1439,6 +1453,7 @@ bool CGame::Draw() {
 		return false;
 
 	PrepareValidationRenderCapture();
+	ApplyValidationRenderCaptureCamera();
 	RmlGui::Update();
 	const spring_time currentTimePreDraw = spring_gettime();
 
@@ -1518,24 +1533,60 @@ bool CGame::Draw() {
 	{
 		SCOPED_TIMER("Draw::Screen");
 		SCOPED_GL_DEBUGGROUP("Draw::Screen");
-		if (!validationRenderCapture) {
-			// Validation capture intentionally excludes screen-space UI and post-processing
-			// so repeatable render comparisons focus on the world scene itself.
+		if (!validationRenderCapture || !validationRenderCaptureSceneOnly) {
+			const auto logValidationGLState = [this](const char* stage) {
+				if (!validationRenderCapture || validationRenderCaptured)
+					return;
+
+				if ((gs->frameNum + 1) < std::max(1, validationRenderCaptureFrame - 1))
+					return;
+
+				GLint viewport[4] = {0, 0, 0, 0};
+				GLint scissor[4] = {0, 0, 0, 0};
+				GLint readFramebuffer = 0;
+				GLint drawFramebuffer = 0;
+
+				glGetIntegerv(GL_VIEWPORT, viewport);
+				glGetIntegerv(GL_SCISSOR_BOX, scissor);
+				glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &readFramebuffer);
+				glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &drawFramebuffer);
+
+				LOG_L(
+					L_INFO,
+					"[ValidationRenderState] frame=%d stage=%s viewport=%d,%d %dx%d scissor=%d,%d %dx%d readFBO=%d drawFBO=%d",
+					gs->frameNum,
+					stage,
+					viewport[0], viewport[1], viewport[2], viewport[3],
+					scissor[0], scissor[1], scissor[2], scissor[3],
+					readFramebuffer,
+					drawFramebuffer
+				);
+			};
+
 			if (CUnitDrawer::UseScreenIcons())
 				unitDrawer->DrawUnitIconsScreen();
 
 			eventHandler.DrawScreenEffects();
+			logValidationGLState("DrawScreenEffects");
 
 			hudDrawer->Draw((gu->GetMyPlayer())->fpsController.GetControllee());
 			debugDrawerAI->Draw();
+			logValidationGLState("HudAndDebug");
 
 			DrawInputReceivers();
+			logValidationGLState("DrawInputReceivers");
 			DrawInputText();
+			logValidationGLState("DrawInputText");
 			DrawInterfaceWidgets();
+			logValidationGLState("DrawInterfaceWidgets");
 			RmlGui::RenderFrame();
-			mouse->DrawCursor();
+			logValidationGLState("RmlGui::RenderFrame");
+			if (!validationRenderCapture || !validationRenderCaptureHideCursor)
+				mouse->DrawCursor();
+			logValidationGLState("DrawCursor");
 
 			eventHandler.DrawScreenPost();
+			logValidationGLState("DrawScreenPost");
 		}
 	}
 
@@ -1547,6 +1598,11 @@ bool CGame::Draw() {
 		// does nothing unless StartCapturing has also been called via /createvideo (Windows-only)
 		videoCapturing->RenderFrame();
 	}
+
+	#if defined(__APPLE__)
+		if (gs->frameNum >= 0)
+			CaptureValidationPresentFrameSequence(globalRendering->drawFrame, false, true, static_cast<unsigned int>(gs->frameNum));
+	#endif
 
 	MaybeRunValidationRenderCapture();
 
@@ -1565,27 +1621,61 @@ bool CGame::Draw() {
 	return true;
 }
 
+void CGame::ApplyValidationRenderCaptureCamera()
+{
+	if (!validationRenderCapture || validationRenderCaptured)
+		return;
+
+	if (validationRenderCapturePlayerStartCamera) {
+		const CTeam* localTeam = teamHandler.Team(gu->myTeam);
+
+		if (localTeam != nullptr) {
+			const float3 startPos = localTeam->GetStartPos();
+			const float clampedX = std::clamp(startPos.x, 0.0f, mapDims.mapx * SQUARE_SIZE * 1.0f);
+			const float clampedZ = std::clamp(startPos.z, 0.0f, mapDims.mapy * SQUARE_SIZE * 1.0f);
+			const float groundY = CGround::GetHeightReal(clampedX, clampedZ, false);
+			const float3 focusPos = float3(clampedX, groundY, clampedZ);
+			const float3 cameraPos = float3(clampedX, groundY + validationRenderCaptureCameraHeight, clampedZ + validationRenderCaptureCameraBackOffset);
+			const float3 captureDir = (focusPos - cameraPos).SafeNormalize();
+			float4 targetPos = {cameraPos.x, cameraPos.y, cameraPos.z, 0.0f};
+
+			camHandler->GetCurrentController().SetPos(targetPos);
+			camHandler->GetCurrentController().SetDir(captureDir);
+			camHandler->CameraTransition(targetPos.w);
+		}
+
+		return;
+	}
+
+	if (validationRenderCaptureCenterCamera) {
+		const float centerX = mapDims.mapx * SQUARE_SIZE * 0.5f;
+		const float centerZ = mapDims.mapy * SQUARE_SIZE * 0.5f;
+		const float centerY = CGround::GetHeightReal(centerX, centerZ, false);
+		const float3 focusPos = float3(centerX, centerY, centerZ);
+		const float3 cameraPos = float3(centerX, centerY + validationRenderCaptureCameraHeight, centerZ + validationRenderCaptureCameraBackOffset);
+		const float3 captureDir = (focusPos - cameraPos).SafeNormalize();
+		float4 targetPos = {cameraPos.x, cameraPos.y, cameraPos.z, 0.0f};
+
+		camHandler->GetCurrentController().SetPos(targetPos);
+		camHandler->GetCurrentController().SetDir(captureDir);
+		camHandler->CameraTransition(targetPos.w);
+	}
+}
+
 void CGame::PrepareValidationRenderCapture()
 {
 	if (!validationRenderCapture || validationRenderCapturePrepared)
 		return;
 
-	const float3 captureDir = float3(0.0f, -0.6f, -0.8f).SafeNormalize();
+	if (validationRenderCaptureHideInterface) {
+		hideInterface = true;
+		showClock = false;
+		showFPS = false;
+		showSpeed = false;
+		guihandler->SetDrawSelectionInfo(false);
+	}
 
-	const float centerX = mapDims.mapx * SQUARE_SIZE * 0.5f;
-	const float centerZ = mapDims.mapy * SQUARE_SIZE * 0.5f;
-	const float centerY = CGround::GetHeightReal(centerX, centerZ, false);
-	float4 targetPos = {centerX, centerY, centerZ, 0.0f};
-
-	hideInterface = true;
-	showClock = false;
-	showFPS = false;
-	showSpeed = false;
-	guihandler->SetDrawSelectionInfo(false);
-
-	camHandler->GetCurrentController().SetPos(targetPos);
-	camHandler->GetCurrentController().SetDir(captureDir);
-	camHandler->CameraTransition(targetPos.w);
+	ApplyValidationRenderCaptureCamera();
 
 	validationRenderCapturePrepared = true;
 }

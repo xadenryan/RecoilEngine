@@ -1,4 +1,6 @@
+#include <algorithm>
 #include <string>
+#include <vector>
 #include <nowide/cstdio.hpp>
 #include <sys/stat.h>
 #include "System/Log/ILog.h"
@@ -7,6 +9,7 @@
 
 // needs to be included after catch
 #include "System/FileSystem/FileSystem.h"
+#include "System/FileSystem/FileQueryFlags.h"
 
 namespace {
 	struct PrepareFileSystem {
@@ -257,3 +260,24 @@ TEST_CASE("GetNormalizedPath - original failing tests")
 }
 
 #undef CHECK_NORM_PATH
+
+TEST_CASE("FindFiles returns relative paths for relative queries")
+{
+	FileSystem::CreateDirectory("findfiles/sub");
+	PrepareFileSystem::WriteFile("findfiles/root.txt", "root");
+	PrepareFileSystem::WriteFile("findfiles/sub/nested.txt", "nested");
+
+	std::vector<std::string> matches;
+	FileSystem::FindFiles(matches, FileSystem::EnsurePathSepAtEnd(pfs.testCwd), "findfiles", ".*\\.txt", FileQueryFlags::RECURSE);
+
+	CHECK(std::find(matches.begin(), matches.end(), "findfiles/root.txt") != matches.end());
+	CHECK(std::find(matches.begin(), matches.end(), "findfiles/sub/nested.txt") != matches.end());
+	CHECK(std::none_of(matches.begin(), matches.end(), [](const std::string& path) {
+		return FileSystem::IsAbsolutePath(path);
+	}));
+
+	CHECK(FileSystem::DeleteFile("findfiles/root.txt"));
+	CHECK(FileSystem::DeleteFile("findfiles/sub/nested.txt"));
+	CHECK(FileSystem::DeleteFile("findfiles/sub"));
+	CHECK(FileSystem::DeleteFile("findfiles"));
+}

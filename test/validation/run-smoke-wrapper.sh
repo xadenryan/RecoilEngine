@@ -12,6 +12,10 @@ capture_tracked_pids() {
 }
 
 capture_tracked_processes() {
+	if [ "$TRACK_PROCESS_LIST" -ne 1 ]; then
+		return 0
+	fi
+
 	ps -axo pid=,command= | awk '
 		function basename(path, count, parts) {
 			count = split(path, parts, "/")
@@ -68,6 +72,10 @@ kill_new_crash_helpers() {
 }
 
 monitor_tracked_processes() {
+	if [ "$TRACK_PROCESS_LIST" -ne 1 ]; then
+		return 0
+	fi
+
 	while [ -n "$CMD_PID" ] && kill -0 "$CMD_PID" 2>/dev/null; do
 		kill_new_crash_helpers
 		sleep 1
@@ -93,16 +101,23 @@ cleanup() {
 		wait "$CMD_PID" 2>/dev/null || true
 	fi
 
-	for pid in $(capture_tracked_pids); do
-		if is_baseline_pid "$pid"; then
-			continue
-		fi
+	if [ "$TRACK_PROCESS_LIST" -eq 1 ]; then
+		for pid in $(capture_tracked_pids); do
+			if is_baseline_pid "$pid"; then
+				continue
+			fi
 
-		terminate_pid "$pid"
-	done
+			terminate_pid "$pid"
+		done
+	fi
 
 	exit "$exit_code"
 }
+
+TRACK_PROCESS_LIST=0
+if ps -axo pid=,command= >/dev/null 2>&1; then
+	TRACK_PROCESS_LIST=1
+fi
 
 BASELINE_PIDS="$(capture_tracked_pids | tr '\n' ' ')"
 CMD_PID=""

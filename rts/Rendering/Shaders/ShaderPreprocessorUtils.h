@@ -120,6 +120,7 @@ namespace Shader::Preprocessor {
 				const char* directive = StartsWithDirective(line, "#elif") ? "#elif" : "#if";
 				size_t pos = line.find(directive);
 				pos = (pos == std::string::npos) ? 0 : (pos + std::strlen(directive));
+				bool skipDefinedOperand = false;
 
 				for (; pos < line.size(); ++pos) {
 					if (!(std::isalpha(static_cast<unsigned char>(line[pos])) || line[pos] == '_'))
@@ -130,8 +131,17 @@ namespace Shader::Preprocessor {
 						++pos;
 
 					const std::string macro = line.substr(macroStart, pos - macroStart);
-					if (macro != "defined")
-						macros.emplace(macro);
+					if (macro == "defined") {
+						skipDefinedOperand = true;
+						continue;
+					}
+
+					if (skipDefinedOperand) {
+						skipDefinedOperand = false;
+						continue;
+					}
+
+					macros.emplace(macro);
 				}
 			}
 
