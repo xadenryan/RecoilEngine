@@ -70,6 +70,7 @@ if [ "$(uname -s)" = "Darwin" ] && [ "${RECOIL_MACOS_SKIP_GUI_SESSION_CHECK:-0}"
 			|| [ "$CONSOLE_USER" != "$(id -un)" ] \
 			|| [ "$GUI_SESSION_OK" -ne 1 ];
 		}; then
+			# Preserve BAR validation overrides across the macOS GUI-session re-exec.
 			exec launchctl asuser "$GUI_UID" /usr/bin/env \
 				PATH="$PATH" \
 				HOME="${HOME:-}" \
@@ -77,6 +78,31 @@ if [ "$(uname -s)" = "Darwin" ] && [ "${RECOIL_MACOS_SKIP_GUI_SESSION_CHECK:-0}"
 				RECOIL_MACOS_SKIP_GUI_SESSION_CHECK=1 \
 				RECOIL_LEGACY_SMOKE_GUI_BOOTSTRAP=1 \
 				RECOIL_SMOKE_WRAPPED=1 \
+				RECOIL_BAR_CONTENT_CACHE_DIR="${RECOIL_BAR_CONTENT_CACHE_DIR:-}" \
+				RECOIL_BAR_SKIP_DOWNLOAD="${RECOIL_BAR_SKIP_DOWNLOAD:-}" \
+				RECOIL_BAR_RAPID_TAG="${RECOIL_BAR_RAPID_TAG:-}" \
+				RECOIL_BAR_MAP_SEARCH_NAME="${RECOIL_BAR_MAP_SEARCH_NAME:-}" \
+				RECOIL_BAR_MAP_SCRIPT_NAME="${RECOIL_BAR_MAP_SCRIPT_NAME:-}" \
+				RECOIL_BAR_REALCONTENT_TIMEOUT_SECS="${RECOIL_BAR_REALCONTENT_TIMEOUT_SECS:-}" \
+				RECOIL_BAR_CAPTURE_FRAME="${RECOIL_BAR_CAPTURE_FRAME:-}" \
+				RECOIL_BAR_PRESENT_CAPTURE_START_FRAME="${RECOIL_BAR_PRESENT_CAPTURE_START_FRAME:-}" \
+				RECOIL_BAR_PRESENT_CAPTURE_FRAME_COUNT="${RECOIL_BAR_PRESENT_CAPTURE_FRAME_COUNT:-}" \
+				RECOIL_BAR_PRESENT_CAPTURE_QUALITY="${RECOIL_BAR_PRESENT_CAPTURE_QUALITY:-}" \
+				RECOIL_BAR_PRESENT_CAPTURE_PREFIX="${RECOIL_BAR_PRESENT_CAPTURE_PREFIX:-}" \
+				RECOIL_BAR_RENDER_MAX_DIFF_PIXELS="${RECOIL_BAR_RENDER_MAX_DIFF_PIXELS:-}" \
+				RECOIL_BAR_RENDER_MAX_CHANNEL_DELTA="${RECOIL_BAR_RENDER_MAX_CHANNEL_DELTA:-}" \
+				RECOIL_BAR_VALIDATION_HIDE_INTERFACE="${RECOIL_BAR_VALIDATION_HIDE_INTERFACE:-}" \
+				RECOIL_BAR_VALIDATION_CENTER_CAMERA="${RECOIL_BAR_VALIDATION_CENTER_CAMERA:-}" \
+				RECOIL_BAR_VALIDATION_PLAYER_START_CAMERA="${RECOIL_BAR_VALIDATION_PLAYER_START_CAMERA:-}" \
+				RECOIL_BAR_VALIDATION_SCENE_ONLY="${RECOIL_BAR_VALIDATION_SCENE_ONLY:-}" \
+				RECOIL_BAR_VALIDATION_HIDE_CURSOR="${RECOIL_BAR_VALIDATION_HIDE_CURSOR:-}" \
+				RECOIL_BAR_VALIDATION_CAMERA_HEIGHT="${RECOIL_BAR_VALIDATION_CAMERA_HEIGHT:-}" \
+				RECOIL_BAR_VALIDATION_CAMERA_BACK_OFFSET="${RECOIL_BAR_VALIDATION_CAMERA_BACK_OFFSET:-}" \
+				RECOIL_BAR_SMOKE_HIDDEN="${RECOIL_BAR_SMOKE_HIDDEN:-}" \
+				RECOIL_RENDER_CAPTURE_WRITE_BASELINE="${RECOIL_RENDER_CAPTURE_WRITE_BASELINE:-}" \
+				PRD_RAPID_USE_STREAMER="${PRD_RAPID_USE_STREAMER:-}" \
+				PRD_RAPID_REPO_MASTER="${PRD_RAPID_REPO_MASTER:-}" \
+				PRD_HTTP_SEARCH_URL="${PRD_HTTP_SEARCH_URL:-}" \
 				/bin/sh "$0" "$@"
 		fi
 	fi
@@ -204,6 +230,7 @@ trap cleanup EXIT INT TERM
 
 mkdir -p "$CACHE_DIR"
 CACHE_DIR=$(CDPATH= cd -- "$CACHE_DIR" && pwd)
+SKIP_DOWNLOAD="${RECOIL_BAR_SKIP_DOWNLOAD:-0}"
 
 : "${PRD_RAPID_USE_STREAMER:=false}"
 : "${PRD_RAPID_REPO_MASTER:=https://repos-cdn.beyondallreason.dev/repos.gz}"
@@ -212,14 +239,34 @@ export PRD_RAPID_USE_STREAMER
 export PRD_RAPID_REPO_MASTER
 export PRD_HTTP_SEARCH_URL
 
-if ! "$PR_DOWNLOADER" \
-		--filesystem-writepath "$CACHE_DIR" \
-		--download-game "$GAME_TAG" \
-		--download-map "$MAP_SEARCH_NAME" \
-		>"$PR_DOWNLOADER_LOG_PATH" 2>&1; then
-	echo "BAR real-content smoke failed while resolving BAR content. See $PR_DOWNLOADER_LOG_PATH" >&2
-	tail -n 120 "$PR_DOWNLOADER_LOG_PATH" >&2 || true
-	exit 1
+if [ "$SKIP_DOWNLOAD" -ne 1 ]; then
+	if ! "$PR_DOWNLOADER" \
+			--filesystem-writepath "$CACHE_DIR" \
+			--download-game "$GAME_TAG" \
+			--download-map "$MAP_SEARCH_NAME" \
+			>"$PR_DOWNLOADER_LOG_PATH" 2>&1; then
+		echo "BAR real-content smoke failed while resolving BAR content. See $PR_DOWNLOADER_LOG_PATH" >&2
+		tail -n 120 "$PR_DOWNLOADER_LOG_PATH" >&2 || true
+		exit 1
+	fi
+else
+	if [ ! -d "$CACHE_DIR/packages" ] || [ ! -d "$CACHE_DIR/pool" ] || [ ! -d "$CACHE_DIR/rapid" ]; then
+		echo "BAR real-content smoke requires a warmed cache when RECOIL_BAR_SKIP_DOWNLOAD=1." >&2
+		echo "Expected packages/, pool/, and rapid/ under $CACHE_DIR." >&2
+		exit 1
+	fi
+
+	if ! find "$CACHE_DIR/packages" -maxdepth 1 -type f \( -name '*.sdp' -o -name '*.sd7' -o -name '*.sdz' \) | grep -q .; then
+		echo "BAR real-content smoke requires at least one cached BAR package when RECOIL_BAR_SKIP_DOWNLOAD=1." >&2
+		echo "No package archives were found in $CACHE_DIR/packages." >&2
+		exit 1
+	fi
+
+	if ! find "$CACHE_DIR/rapid" -type f -name 'versions.gz' | grep -q .; then
+		echo "BAR real-content smoke requires cached rapid metadata when RECOIL_BAR_SKIP_DOWNLOAD=1." >&2
+		echo "No versions.gz file was found under $CACHE_DIR/rapid." >&2
+		exit 1
+	fi
 fi
 
 mkdir -p \

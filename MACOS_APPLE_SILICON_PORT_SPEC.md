@@ -386,6 +386,7 @@ Command shape:
 Current important environment variables:
 
 - `RECOIL_BAR_CONTENT_CACHE_DIR`
+- `RECOIL_BAR_SKIP_DOWNLOAD`
 - `RECOIL_BAR_RAPID_TAG`
 - `RECOIL_BAR_MAP_SEARCH_NAME`
 - `RECOIL_BAR_MAP_SCRIPT_NAME`
@@ -405,6 +406,7 @@ Required fixture behavior:
 
 - isolated BAR data dir
 - warmed cache when possible
+- use `RECOIL_BAR_SKIP_DOWNLOAD=1` for repeat runs against a known-good warmed cache
 - repo-local `cont/LuaUI` overrides staged into the fixture
 - minimal validation-only `BYAR.lua`
 - engine-owned screenshot capture
@@ -466,6 +468,7 @@ Command shape:
 
 ```bash
 RECOIL_BAR_CONTENT_CACHE_DIR=<shared-cache-dir> \
+RECOIL_BAR_SKIP_DOWNLOAD=1 \
 RECOIL_RENDER_CAPTURE_WRITE_BASELINE=<x86-reference-image> \
 ./test/validation/run-bar-realcontent-smoke.sh <x86-spring> <x86-pr-downloader> [reference-image] [timeout-seconds]
 ```
@@ -474,6 +477,7 @@ Follow-up Apple Silicon compare:
 
 ```bash
 RECOIL_BAR_CONTENT_CACHE_DIR=<shared-cache-dir> \
+RECOIL_BAR_SKIP_DOWNLOAD=1 \
 ./test/validation/run-bar-realcontent-smoke.sh <arm64-spring> <native-pr-downloader> <x86-reference-image> [timeout-seconds]
 ```
 

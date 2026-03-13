@@ -157,6 +157,14 @@ The intended comparison shape is:
 - one Rosetta `x86_64` screenshot
 - one native Apple Silicon screenshot
 
+For repeat runs against a known-good warmed cache, prefer:
+
+```bash
+RECOIL_BAR_CONTENT_CACHE_DIR=<shared-cache-dir> \
+RECOIL_BAR_SKIP_DOWNLOAD=1 \
+./test/validation/run-bar-realcontent-smoke.sh <x86-spring> <x86-pr-downloader> [reference-image] [timeout-seconds]
+```
+
 ## Fallback
 
 If the same-OS Rosetta path regresses again, the fallback x86 reference path on this machine is `amd64-linux` in Docker. That is still useful, but it is a cross-OS reference and should not replace the macOS `x86_64` reference when the Rosetta path is available.

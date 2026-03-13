@@ -65,20 +65,22 @@ void CVerticalSync::SetInterval() { SetInterval(configHandler->GetInt("VSync"));
 void CVerticalSync::SetInterval(int i)
 {
 	i = std::clamp(i, MAX_ADAPTIVE_INTERVAL, MAX_STANDARD_INTERVAL);
+	const bool forceDisableForValidation = configHandler->GetBool("ValidationForceDisableVSync");
 
 	// Keep validation smokes off the Cocoa swap path that BAR can re-enable later.
-	if (configHandler->GetBool("ValidationForceDisableVSync"))
+	if (forceDisableForValidation)
 		i = 0;
-
-	if (configHandler->GetInt("VSync") != i)
-		configHandler->Set("VSync", i);
 
 	// recursion is already prevented (Set only notifies on changed
 	// values), this just avoids making the SDL calls a second time
 	if (i == interval)
 		return;
 
-	interval = i;
+	if (!forceDisableForValidation) {
+		configHandler->Set("VSync", interval = i);
+	} else {
+		interval = i;
+	}
 
 	#if defined HEADLESS
 	return;
