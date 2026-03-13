@@ -49,35 +49,43 @@ if [ ! -x "$PR_DOWNLOADER" ]; then
 	exit 1
 fi
 
-if [ "$(uname -s)" = "Darwin" ] && [ "${RECOIL_MACOS_SKIP_GUI_SESSION_CHECK:-0}" -ne 1 ]; then
-	if ! "$SCRIPT_DIR/check-macos-gui-session.sh" --count-only >/dev/null 2>&1; then
-		echo "BAR real-content smoke requires an interactive macOS GUI login session with at least one Aqua-attached display."
-		echo "This shell currently has no visible NSScreen instances, so SDL window creation would fail before the client can render BAR."
-		echo "Run the same command from Terminal or iTerm inside the desktop session, or set RECOIL_MACOS_SKIP_GUI_SESSION_CHECK=1 if you are intentionally using a custom GUI launcher."
-		exit 1
-	fi
-fi
-
 if [ -n "$REFERENCE_IMAGE" ] && [ ! -f "$REFERENCE_IMAGE" ]; then
 	echo "Reference image $REFERENCE_IMAGE doesn't exist!"
 	exit 1
 fi
 
-if [ "$(uname -s)" = "Darwin" ] && [ "${RECOIL_LEGACY_SMOKE_GUI_BOOTSTRAP:-0}" -ne 1 ]; then
-	GUI_UID=$(id -u)
-	CONSOLE_USER=$(stat -f %Su /dev/console 2>/dev/null || true)
+if [ "$(uname -s)" = "Darwin" ] && [ "${RECOIL_MACOS_SKIP_GUI_SESSION_CHECK:-0}" -ne 1 ]; then
+	GUI_SESSION_OK=0
 
-	if {
-		[ "${RECOIL_LEGACY_SMOKE_FORCE_ASUSER:-0}" -eq 1 ] \
-		|| [ "$CONSOLE_USER" != "$(id -un)" ];
-	} && launchctl print "gui/$GUI_UID" >/dev/null 2>&1; then
-		exec launchctl asuser "$GUI_UID" /usr/bin/env \
-			PATH="$PATH" \
-			HOME="${HOME:-}" \
-			TMPDIR="${TMPDIR:-}" \
-			RECOIL_LEGACY_SMOKE_GUI_BOOTSTRAP=1 \
-			RECOIL_SMOKE_WRAPPED=1 \
-			/bin/sh "$0" "$@"
+	if "$SCRIPT_DIR/check-macos-gui-session.sh" --count-only >/dev/null 2>&1; then
+		GUI_SESSION_OK=1
+	fi
+
+	if [ "${RECOIL_LEGACY_SMOKE_GUI_BOOTSTRAP:-0}" -ne 1 ]; then
+		GUI_UID=$(id -u)
+		CONSOLE_USER=$(stat -f %Su /dev/console 2>/dev/null || true)
+
+		if launchctl print "gui/$GUI_UID" >/dev/null 2>&1 && {
+			[ "${RECOIL_LEGACY_SMOKE_FORCE_ASUSER:-0}" -eq 1 ] \
+			|| [ "$CONSOLE_USER" != "$(id -un)" ] \
+			|| [ "$GUI_SESSION_OK" -ne 1 ];
+		}; then
+			exec launchctl asuser "$GUI_UID" /usr/bin/env \
+				PATH="$PATH" \
+				HOME="${HOME:-}" \
+				TMPDIR="${TMPDIR:-}" \
+				RECOIL_MACOS_SKIP_GUI_SESSION_CHECK=1 \
+				RECOIL_LEGACY_SMOKE_GUI_BOOTSTRAP=1 \
+				RECOIL_SMOKE_WRAPPED=1 \
+				/bin/sh "$0" "$@"
+		fi
+	fi
+
+	if [ "$GUI_SESSION_OK" -ne 1 ]; then
+		echo "BAR real-content smoke requires an interactive macOS GUI login session with at least one Aqua-attached display."
+		echo "This shell currently has no visible NSScreen instances, so SDL window creation would fail before the client can render BAR."
+		echo "Run the same command from Terminal or iTerm inside the desktop session, or set RECOIL_MACOS_SKIP_GUI_SESSION_CHECK=1 if you are intentionally using a custom GUI launcher."
+		exit 1
 	fi
 fi
 
@@ -99,6 +107,7 @@ SCREENSHOT_PATH=""
 VALIDATION_SCREENSHOT_PATH=""
 SELECTED_PRESENT_CAPTURE_PATH=""
 PRESENT_CAPTURE_SELECTION_LOG_PATH=""
+PR_DOWNLOADER_LOG_PATH="$ISOLATION_DIR/pr-downloader.log"
 MAP_SEARCH_NAME="${RECOIL_BAR_MAP_SEARCH_NAME:-Angel Crossing 1.4}"
 MAP_SCRIPT_NAME="${RECOIL_BAR_MAP_SCRIPT_NAME:-$MAP_SEARCH_NAME}"
 GAME_TAG="${RECOIL_BAR_RAPID_TAG:-rapid://byar:test}"
@@ -203,10 +212,15 @@ export PRD_RAPID_USE_STREAMER
 export PRD_RAPID_REPO_MASTER
 export PRD_HTTP_SEARCH_URL
 
-"$PR_DOWNLOADER" \
-	--filesystem-writepath "$CACHE_DIR" \
-	--download-game "$GAME_TAG" \
-	--download-map "$MAP_SEARCH_NAME"
+if ! "$PR_DOWNLOADER" \
+		--filesystem-writepath "$CACHE_DIR" \
+		--download-game "$GAME_TAG" \
+		--download-map "$MAP_SEARCH_NAME" \
+		>"$PR_DOWNLOADER_LOG_PATH" 2>&1; then
+	echo "BAR real-content smoke failed while resolving BAR content. See $PR_DOWNLOADER_LOG_PATH" >&2
+	tail -n 120 "$PR_DOWNLOADER_LOG_PATH" >&2 || true
+	exit 1
+fi
 
 mkdir -p \
 	"$ISOLATION_DIR/base" \
@@ -287,6 +301,13 @@ ValidationRenderCaptureHideCursor = $VALIDATION_HIDE_CURSOR
 ValidationRenderCaptureCameraHeight = $VALIDATION_CAMERA_HEIGHT
 ValidationRenderCaptureCameraBackOffset = $VALIDATION_CAMERA_BACK_OFFSET
 EOF
+
+if [ "$(uname -s)" = "Darwin" ]; then
+cat >> "$ISOLATION_DIR/springsettings.cfg" <<'EOF'
+VSync = 0
+ValidationForceDisableVSync = 1
+EOF
+fi
 
 if [ "$PRESENT_CAPTURE_FRAME_COUNT" -gt 0 ]; then
 cat >> "$ISOLATION_DIR/springsettings.cfg" <<EOF

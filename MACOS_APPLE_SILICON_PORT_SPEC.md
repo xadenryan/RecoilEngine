@@ -701,6 +701,12 @@ If any future edit compresses an entry so far that one of those four pieces beco
   Verification impact: a successful legacy smoke with this flag proves the client can finish filesystem initialization and continue into the actual smoke fixture without relying on splash-screen presents; it does not change normal startup behavior for non-validation runs.
   Exit criteria: keep this bypass validation-only unless the underlying Cocoa/SDL splash present hang is fixed strongly enough that the smoke harness can return to the default splash path without reintroducing startup hangs.
 
+- Validation VSync pin:
+  the validation-only `ValidationForceDisableVSync` config now keeps `VSync` forced to `0` for macOS GUI smoke runs, even if BAR or other runtime config paths try to re-enable adaptive swap during load.
+  Why: on this Apple Silicon/macOS path, validation runs can reach `GameDataReceived` and then wedge in `Cocoa_GL_SwapWindow` once content flips `VSync` back to adaptive; normal gameplay defaults still need to remain unchanged outside validation.
+  Verification impact: passing macOS GUI smoke with this flag proves the validation harness can progress through load, capture frames, and shut down without the late swap-interval stall; it does not claim that normal user-facing `VSync` behavior is already fixed.
+  Exit criteria: remove this validation-only pin only after the underlying post-load Cocoa swap stall is fixed well enough that BAR and the legacy smoke fixtures can keep their normal `VSync` behavior without hanging.
+
 - Validation render scope:
   `ValidationRenderCapture` currently suppresses screen-space UI, cursor, and screen-post passes during automated render comparison.
   Why: the current Apple Silicon/macOS graphical validation effort is still stabilizing repeatable world-scene captures first, and these screen-space surfaces remain more sensitive to session timing and host interaction than the world draw.

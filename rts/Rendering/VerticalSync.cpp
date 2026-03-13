@@ -24,6 +24,9 @@ CONFIG(int, VSync).
 		"Synchronize buffer swaps with vertical blanking interval."
 		" Modes are -N (adaptive), +N (standard), or 0 (disabled)."
 	);
+CONFIG(bool, ValidationForceDisableVSync).
+	defaultValue(false).
+	description("Validation-only: keep vertical sync disabled and ignore runtime attempts to re-enable it.");
 
 CVerticalSync* CVerticalSync::GetInstance()
 {
@@ -61,12 +64,21 @@ void CVerticalSync::Toggle()
 void CVerticalSync::SetInterval() { SetInterval(configHandler->GetInt("VSync")); }
 void CVerticalSync::SetInterval(int i)
 {
+	i = std::clamp(i, MAX_ADAPTIVE_INTERVAL, MAX_STANDARD_INTERVAL);
+
+	// Keep validation smokes off the Cocoa swap path that BAR can re-enable later.
+	if (configHandler->GetBool("ValidationForceDisableVSync"))
+		i = 0;
+
+	if (configHandler->GetInt("VSync") != i)
+		configHandler->Set("VSync", i);
+
 	// recursion is already prevented (Set only notifies on changed
 	// values), this just avoids making the SDL calls a second time
-	if ((i = std::clamp(i, MAX_ADAPTIVE_INTERVAL, MAX_STANDARD_INTERVAL)) == interval)
+	if (i == interval)
 		return;
 
-	configHandler->Set("VSync", interval = i);
+	interval = i;
 
 	#if defined HEADLESS
 	return;

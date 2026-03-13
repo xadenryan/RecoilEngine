@@ -1626,6 +1626,11 @@ void CGame::ApplyValidationRenderCaptureCamera()
 	if (!validationRenderCapture || validationRenderCaptured)
 		return;
 
+	// BAR's overview camera ignores SetPos/SetDir, so validation captures must
+	// switch to a controllable mode before forcing a deterministic camera pose.
+	if (camHandler->GetCurrentControllerNum() == CCameraHandler::CAMERA_MODE_OVERVIEW)
+		camHandler->SetCameraMode(CCameraHandler::CAMERA_MODE_FREE);
+
 	if (validationRenderCapturePlayerStartCamera) {
 		const CTeam* localTeam = teamHandler.Team(gu->myTeam);
 

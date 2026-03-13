@@ -20,29 +20,37 @@ if [ ! -x "$SPRING_LEGACY" ]; then
 fi
 
 if [ "$(uname -s)" = "Darwin" ] && [ "${RECOIL_MACOS_SKIP_GUI_SESSION_CHECK:-0}" -ne 1 ]; then
-	if ! "$SCRIPT_DIR/check-macos-gui-session.sh" --count-only >/dev/null 2>&1; then
+	GUI_SESSION_OK=0
+
+	if "$SCRIPT_DIR/check-macos-gui-session.sh" --count-only >/dev/null 2>&1; then
+		GUI_SESSION_OK=1
+	fi
+
+	if [ "${RECOIL_LEGACY_SMOKE_GUI_BOOTSTRAP:-0}" -ne 1 ]; then
+		GUI_UID=$(id -u)
+		CONSOLE_USER=$(stat -f %Su /dev/console 2>/dev/null || true)
+
+		if launchctl print "gui/$GUI_UID" >/dev/null 2>&1 && {
+			[ "${RECOIL_LEGACY_SMOKE_FORCE_ASUSER:-0}" -eq 1 ] \
+			|| [ "$CONSOLE_USER" != "$(id -un)" ] \
+			|| [ "$GUI_SESSION_OK" -ne 1 ];
+		}; then
+			exec launchctl asuser "$GUI_UID" /usr/bin/env \
+				PATH="$PATH" \
+				HOME="${HOME:-}" \
+				TMPDIR="${TMPDIR:-}" \
+				RECOIL_MACOS_SKIP_GUI_SESSION_CHECK=1 \
+				RECOIL_LEGACY_SMOKE_GUI_BOOTSTRAP=1 \
+				RECOIL_SMOKE_WRAPPED=1 \
+				/bin/sh "$0" "$@"
+		fi
+	fi
+
+	if [ "$GUI_SESSION_OK" -ne 1 ]; then
 		echo "Legacy blank-map smoke requires an interactive macOS GUI login session with at least one Aqua-attached display."
 		echo "This shell currently has no visible NSScreen instances, so SDL window creation would fail before the engine can render anything."
 		echo "Run the same command from Terminal or iTerm inside the desktop session, or set RECOIL_MACOS_SKIP_GUI_SESSION_CHECK=1 if you are intentionally using a custom GUI launcher."
 		exit 1
-	fi
-fi
-
-if [ "$(uname -s)" = "Darwin" ] && [ "${RECOIL_LEGACY_SMOKE_GUI_BOOTSTRAP:-0}" -ne 1 ]; then
-	GUI_UID=$(id -u)
-	CONSOLE_USER=$(stat -f %Su /dev/console 2>/dev/null || true)
-
-	if {
-		[ "${RECOIL_LEGACY_SMOKE_FORCE_ASUSER:-0}" -eq 1 ] \
-		|| [ "$CONSOLE_USER" != "$(id -un)" ];
-	} && launchctl print "gui/$GUI_UID" >/dev/null 2>&1; then
-		exec launchctl asuser "$GUI_UID" /usr/bin/env \
-			PATH="$PATH" \
-			HOME="${HOME:-}" \
-			TMPDIR="${TMPDIR:-}" \
-			RECOIL_LEGACY_SMOKE_GUI_BOOTSTRAP=1 \
-			RECOIL_SMOKE_WRAPPED=1 \
-			/bin/sh "$0" "$@"
 	fi
 fi
 
@@ -140,6 +148,13 @@ XResolutionWindowed = 1280
 YResolutionWindowed = 800
 ValidationDisableSplashScreen = 1
 EOF
+
+if [ "$(uname -s)" = "Darwin" ]; then
+cat >> "$ISOLATION_DIR/springsettings.cfg" <<'EOF'
+VSync = 0
+ValidationForceDisableVSync = 1
+EOF
+fi
 
 set -- \
 	"$SPRING_LEGACY" \
