@@ -5,6 +5,10 @@ set -eu
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 
 if [ "${RECOIL_SMOKE_WRAPPED:-0}" -ne 1 ]; then
+	if [ "$(uname -s)" = "Darwin" ]; then
+		exec /usr/bin/env RECOIL_SMOKE_WRAPPER_FOREGROUND=1 "$SCRIPT_DIR/run-smoke-wrapper.sh" /bin/sh "$0" "$@"
+	fi
+
 	exec "$SCRIPT_DIR/run-smoke-wrapper.sh" /bin/sh "$0" "$@"
 fi
 
@@ -45,6 +49,15 @@ if [ ! -x "$PR_DOWNLOADER" ]; then
 	exit 1
 fi
 
+if [ "$(uname -s)" = "Darwin" ] && [ "${RECOIL_MACOS_SKIP_GUI_SESSION_CHECK:-0}" -ne 1 ]; then
+	if ! "$SCRIPT_DIR/check-macos-gui-session.sh" --count-only >/dev/null 2>&1; then
+		echo "BAR real-content smoke requires an interactive macOS GUI login session with at least one Aqua-attached display."
+		echo "This shell currently has no visible NSScreen instances, so SDL window creation would fail before the client can render BAR."
+		echo "Run the same command from Terminal or iTerm inside the desktop session, or set RECOIL_MACOS_SKIP_GUI_SESSION_CHECK=1 if you are intentionally using a custom GUI launcher."
+		exit 1
+	fi
+fi
+
 if [ -n "$REFERENCE_IMAGE" ] && [ ! -f "$REFERENCE_IMAGE" ]; then
 	echo "Reference image $REFERENCE_IMAGE doesn't exist!"
 	exit 1
@@ -52,8 +65,12 @@ fi
 
 if [ "$(uname -s)" = "Darwin" ] && [ "${RECOIL_LEGACY_SMOKE_GUI_BOOTSTRAP:-0}" -ne 1 ]; then
 	GUI_UID=$(id -u)
+	CONSOLE_USER=$(stat -f %Su /dev/console 2>/dev/null || true)
 
-	if launchctl print "gui/$GUI_UID" >/dev/null 2>&1; then
+	if {
+		[ "${RECOIL_LEGACY_SMOKE_FORCE_ASUSER:-0}" -eq 1 ] \
+		|| [ "$CONSOLE_USER" != "$(id -un)" ];
+	} && launchctl print "gui/$GUI_UID" >/dev/null 2>&1; then
 		exec launchctl asuser "$GUI_UID" /usr/bin/env \
 			PATH="$PATH" \
 			HOME="${HOME:-}" \
@@ -99,7 +116,7 @@ VALIDATION_SCENE_ONLY="${RECOIL_BAR_VALIDATION_SCENE_ONLY:-1}"
 VALIDATION_HIDE_CURSOR="${RECOIL_BAR_VALIDATION_HIDE_CURSOR:-1}"
 VALIDATION_CAMERA_HEIGHT="${RECOIL_BAR_VALIDATION_CAMERA_HEIGHT:-1200}"
 VALIDATION_CAMERA_BACK_OFFSET="${RECOIL_BAR_VALIDATION_CAMERA_BACK_OFFSET:-900}"
-WINDOW_HIDDEN="${RECOIL_BAR_SMOKE_HIDDEN:-1}"
+WINDOW_HIDDEN="${RECOIL_BAR_SMOKE_HIDDEN:-}"
 BYAR_CONFIG_PATH=""
 COMPARE_EXIT=0
 
@@ -109,6 +126,14 @@ cleanup() {
 		wait "$PID" 2>/dev/null || true
 	fi
 }
+
+if [ -z "$WINDOW_HIDDEN" ]; then
+	if [ "$(uname -s)" = "Darwin" ]; then
+		WINDOW_HIDDEN=0
+	else
+		WINDOW_HIDDEN=1
+	fi
+fi
 
 normalize_archive_key() {
 	printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/_/g; s/^_+//; s/_+$//'

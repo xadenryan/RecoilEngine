@@ -4,10 +4,6 @@ set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 
-if [ "${RECOIL_SMOKE_WRAPPED:-0}" -ne 1 ]; then
-	exec "$SCRIPT_DIR/run-smoke-wrapper.sh" /bin/sh "$0" "$@"
-fi
-
 if [ $# -lt 1 ] || [ $# -gt 2 ]; then
 	echo "Usage: $0 /path/to/spring [reference-image]"
 	exit 1
@@ -16,10 +12,20 @@ fi
 SPRING_LEGACY="$1"
 REFERENCE_IMAGE="${2:-}"
 TIMEOUT_SECS="${RECOIL_LEGACY_RENDER_TIMEOUT_SECS:-45}"
+WINDOW_HIDDEN="${RECOIL_LEGACY_SMOKE_HIDDEN:-}"
 
 if [ ! -x "$SPRING_LEGACY" ]; then
 	echo "Parameter 1 $SPRING_LEGACY isn't executable!"
 	exit 1
+fi
+
+if [ "$(uname -s)" = "Darwin" ] && [ "${RECOIL_MACOS_SKIP_GUI_SESSION_CHECK:-0}" -ne 1 ]; then
+	if ! "$SCRIPT_DIR/check-macos-gui-session.sh" --count-only >/dev/null 2>&1; then
+		echo "Legacy render smoke requires an interactive macOS GUI login session with at least one Aqua-attached display."
+		echo "This shell currently has no visible NSScreen instances, so SDL window creation would fail before validation capture can begin."
+		echo "Run the same command from Terminal or iTerm inside the desktop session, or set RECOIL_MACOS_SKIP_GUI_SESSION_CHECK=1 if you are intentionally using a custom GUI launcher."
+		exit 1
+	fi
 fi
 
 if [ -n "$REFERENCE_IMAGE" ] && [ ! -f "$REFERENCE_IMAGE" ]; then
@@ -29,14 +35,35 @@ fi
 
 if [ "$(uname -s)" = "Darwin" ] && [ "${RECOIL_LEGACY_SMOKE_GUI_BOOTSTRAP:-0}" -ne 1 ]; then
 	GUI_UID=$(id -u)
+	CONSOLE_USER=$(stat -f %Su /dev/console 2>/dev/null || true)
 
-	if launchctl print "gui/$GUI_UID" >/dev/null 2>&1; then
+	if {
+		[ "${RECOIL_LEGACY_SMOKE_FORCE_ASUSER:-0}" -eq 1 ] \
+		|| [ "$CONSOLE_USER" != "$(id -un)" ];
+	} && launchctl print "gui/$GUI_UID" >/dev/null 2>&1; then
 		exec launchctl asuser "$GUI_UID" /usr/bin/env \
 			PATH="$PATH" \
 			HOME="${HOME:-}" \
 			TMPDIR="${TMPDIR:-}" \
 			RECOIL_LEGACY_SMOKE_GUI_BOOTSTRAP=1 \
+			RECOIL_SMOKE_WRAPPED=1 \
 			/bin/sh "$0" "$@"
+	fi
+fi
+
+if [ "${RECOIL_SMOKE_WRAPPED:-0}" -ne 1 ]; then
+	if [ "$(uname -s)" = "Darwin" ]; then
+		exec /usr/bin/env RECOIL_SMOKE_WRAPPER_FOREGROUND=1 "$SCRIPT_DIR/run-smoke-wrapper.sh" /bin/sh "$0" "$@"
+	fi
+
+	exec "$SCRIPT_DIR/run-smoke-wrapper.sh" /bin/sh "$0" "$@"
+fi
+
+if [ -z "$WINDOW_HIDDEN" ]; then
+	if [ "$(uname -s)" = "Darwin" ]; then
+		WINDOW_HIDDEN=0
+	else
+		WINDOW_HIDDEN=1
 	fi
 fi
 
@@ -127,14 +154,21 @@ ValidationRenderCapture = 1
 ValidationRenderCaptureFrame = 30
 EOF
 
-"$SPRING_LEGACY" \
+set -- \
+	"$SPRING_LEGACY" \
 	-nocolor \
-	-window \
-	-hidden \
+	-window
+
+if [ "$WINDOW_HIDDEN" -eq 1 ]; then
+	set -- "$@" -hidden
+fi
+
+set -- "$@" \
 	-isolation \
 	-isolation-dir "$ISOLATION_DIR" \
-	"$ISOLATION_DIR/script.txt" \
-	> "$ISOLATION_DIR/run.out" 2>&1 &
+	"$ISOLATION_DIR/script.txt"
+
+"$@" > "$ISOLATION_DIR/run.out" 2>&1 &
 PID=$!
 
 ITER=0

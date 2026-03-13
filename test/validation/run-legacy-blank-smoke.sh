@@ -4,10 +4,6 @@ set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 
-if [ "${RECOIL_SMOKE_WRAPPED:-0}" -ne 1 ]; then
-	exec "$SCRIPT_DIR/run-smoke-wrapper.sh" /bin/sh "$0" "$@"
-fi
-
 if [ $# -lt 1 ]; then
 	echo "Usage: $0 /path/to/spring [timeout-seconds]"
 	exit 1
@@ -16,22 +12,53 @@ fi
 SPRING_LEGACY="$1"
 TIMEOUT_SECS="${2:-25}"
 STABLE_SECS="${RECOIL_LEGACY_SMOKE_STABLE_SECS:-3}"
+WINDOW_HIDDEN="${RECOIL_LEGACY_SMOKE_HIDDEN:-}"
 
 if [ ! -x "$SPRING_LEGACY" ]; then
 	echo "Parameter 1 $SPRING_LEGACY isn't executable!"
 	exit 1
 fi
 
+if [ "$(uname -s)" = "Darwin" ] && [ "${RECOIL_MACOS_SKIP_GUI_SESSION_CHECK:-0}" -ne 1 ]; then
+	if ! "$SCRIPT_DIR/check-macos-gui-session.sh" --count-only >/dev/null 2>&1; then
+		echo "Legacy blank-map smoke requires an interactive macOS GUI login session with at least one Aqua-attached display."
+		echo "This shell currently has no visible NSScreen instances, so SDL window creation would fail before the engine can render anything."
+		echo "Run the same command from Terminal or iTerm inside the desktop session, or set RECOIL_MACOS_SKIP_GUI_SESSION_CHECK=1 if you are intentionally using a custom GUI launcher."
+		exit 1
+	fi
+fi
+
 if [ "$(uname -s)" = "Darwin" ] && [ "${RECOIL_LEGACY_SMOKE_GUI_BOOTSTRAP:-0}" -ne 1 ]; then
 	GUI_UID=$(id -u)
+	CONSOLE_USER=$(stat -f %Su /dev/console 2>/dev/null || true)
 
-	if launchctl print "gui/$GUI_UID" >/dev/null 2>&1; then
+	if {
+		[ "${RECOIL_LEGACY_SMOKE_FORCE_ASUSER:-0}" -eq 1 ] \
+		|| [ "$CONSOLE_USER" != "$(id -un)" ];
+	} && launchctl print "gui/$GUI_UID" >/dev/null 2>&1; then
 		exec launchctl asuser "$GUI_UID" /usr/bin/env \
 			PATH="$PATH" \
 			HOME="${HOME:-}" \
 			TMPDIR="${TMPDIR:-}" \
 			RECOIL_LEGACY_SMOKE_GUI_BOOTSTRAP=1 \
+			RECOIL_SMOKE_WRAPPED=1 \
 			/bin/sh "$0" "$@"
+	fi
+fi
+
+if [ "${RECOIL_SMOKE_WRAPPED:-0}" -ne 1 ]; then
+	if [ "$(uname -s)" = "Darwin" ]; then
+		exec /usr/bin/env RECOIL_SMOKE_WRAPPER_FOREGROUND=1 "$SCRIPT_DIR/run-smoke-wrapper.sh" /bin/sh "$0" "$@"
+	fi
+
+	exec "$SCRIPT_DIR/run-smoke-wrapper.sh" /bin/sh "$0" "$@"
+fi
+
+if [ -z "$WINDOW_HIDDEN" ]; then
+	if [ "$(uname -s)" = "Darwin" ]; then
+		WINDOW_HIDDEN=0
+	else
+		WINDOW_HIDDEN=1
 	fi
 fi
 
@@ -114,30 +141,40 @@ YResolutionWindowed = 800
 ValidationDisableSplashScreen = 1
 EOF
 
-"$SPRING_LEGACY" \
+set -- \
+	"$SPRING_LEGACY" \
 	-nocolor \
-	-window \
-	-hidden \
+	-window
+
+if [ "$WINDOW_HIDDEN" -eq 1 ]; then
+	set -- "$@" -hidden
+fi
+
+set -- "$@" \
 	-isolation \
 	-isolation-dir "$ISOLATION_DIR" \
-	"$ISOLATION_DIR/script.txt" \
-	> "$ISOLATION_DIR/run.out" 2>&1 &
+	"$ISOLATION_DIR/script.txt"
+
+"$@" > "$ISOLATION_DIR/run.out" 2>&1 &
 PID=$!
 
 PASSED=0
 ITER=0
 while [ "$ITER" -lt "$TIMEOUT_SECS" ]; do
 	if [ -f "$ISOLATION_DIR/infolog.txt" ]; then
-		if grep -q "Fatal: \\[ExitSpringProcess\\]" "$ISOLATION_DIR/infolog.txt" \
-			|| grep -q "Segmentation fault" "$ISOLATION_DIR/infolog.txt" \
-			|| grep -q "caught opengl_error" "$ISOLATION_DIR/infolog.txt"; then
+		if grep -q "Fatal: \\[ExitSpringProcess\\]" "$ISOLATION_DIR/infolog.txt" "$ISOLATION_DIR/run.out" \
+			|| grep -q "Segmentation fault" "$ISOLATION_DIR/infolog.txt" "$ISOLATION_DIR/run.out" \
+			|| grep -q "caught opengl_error" "$ISOLATION_DIR/infolog.txt" "$ISOLATION_DIR/run.out"; then
 			break
 		fi
 
 		if grep -q "SDL version :" "$ISOLATION_DIR/infolog.txt" \
 			&& grep -q "GL version  :" "$ISOLATION_DIR/infolog.txt" \
 			&& grep -q "Initialized OpenGL Context:" "$ISOLATION_DIR/infolog.txt" \
-			&& grep -q "\[PreGame::GameDataReceived\] recording demo to" "$ISOLATION_DIR/infolog.txt"; then
+			&& (
+				grep -q "\[PreGame::GameDataReceived\] recording demo to" "$ISOLATION_DIR/infolog.txt" \
+				|| grep -q "\[PreGame::GameDataReceived\] recording demo to" "$ISOLATION_DIR/run.out"
+			); then
 			READY_STREAK=$((READY_STREAK + 1))
 
 			if [ "$READY_STREAK" -ge "$STABLE_SECS" ] && kill -0 "$PID" 2>/dev/null; then
@@ -162,6 +199,9 @@ if [ "$PASSED" -ne 1 ]; then
 	echo "Isolation dir: $ISOLATION_DIR"
 	if [ -f "$ISOLATION_DIR/infolog.txt" ]; then
 		tail -n 200 "$ISOLATION_DIR/infolog.txt"
+	fi
+	if [ -f "$ISOLATION_DIR/run.out" ]; then
+		tail -n 120 "$ISOLATION_DIR/run.out"
 	fi
 	exit 1
 fi

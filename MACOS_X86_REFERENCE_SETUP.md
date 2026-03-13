@@ -8,6 +8,8 @@ The canonical Apple Silicon engineering and validation contract now lives in [MA
 
 Use a Rosetta `x86_64` macOS build of RecoilEngine on this machine as a render-comparison reference for the native Apple Silicon port.
 
+For graphical validation, the Rosetta client must still be launched from an interactive macOS desktop session. If `test/validation/check-macos-gui-session.sh --count-only` reports zero `NSScreen` instances, fix the launch context first instead of treating `SDL` display-init failures as an `x86_64` engine regression.
+
 ## Current `pr-downloader` Source
 
 The current same-machine Rosetta reference path depends on `tools/pr-downloader` carrying explicit `macOS x86_64` platform support.

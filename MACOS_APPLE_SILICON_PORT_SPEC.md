@@ -233,6 +233,8 @@ These rules apply to every supported Apple Silicon validation path:
 - do not depend on a user-global Spring data directory
 - do not depend on external host capture tools
 - treat a visible GUI session as required for graphical validation
+- on macOS, confirm the repo-local AppKit probe (`test/validation/check-macos-gui-session.sh --count-only`) reports at least one `NSScreen` before treating GUI-smoke failures as engine regressions
+- if the AppKit probe reports zero screens, rerun the same smoke from an interactive Terminal or iTerm window in the desktop session rather than adding engine-side workarounds for a headless launch context
 - use repo-relative paths and environment variables, not workspace-specific absolute paths
 
 ### Dedicated Blank Smoke

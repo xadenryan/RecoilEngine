@@ -76,6 +76,14 @@ monitor_tracked_processes() {
 		return 0
 	fi
 
+	if [ "$FOREGROUND_MODE" -eq 1 ]; then
+		while kill -0 "$WRAPPER_PID" 2>/dev/null; do
+			kill_new_crash_helpers
+			sleep 1
+		done
+		return 0
+	fi
+
 	while [ -n "$CMD_PID" ] && kill -0 "$CMD_PID" 2>/dev/null; do
 		kill_new_crash_helpers
 		sleep 1
@@ -119,17 +127,24 @@ if ps -axo pid=,command= >/dev/null 2>&1; then
 	TRACK_PROCESS_LIST=1
 fi
 
+FOREGROUND_MODE="${RECOIL_SMOKE_WRAPPER_FOREGROUND:-0}"
 BASELINE_PIDS="$(capture_tracked_pids | tr '\n' ' ')"
+WRAPPER_PID="$$"
 CMD_PID=""
 MONITOR_PID=""
 CLEANED_UP=0
 
 trap cleanup EXIT HUP INT TERM
 
-RECOIL_SMOKE_WRAPPED=1 "$@" &
-CMD_PID="$!"
-
 monitor_tracked_processes &
 MONITOR_PID="$!"
+
+if [ "$FOREGROUND_MODE" -eq 1 ]; then
+	RECOIL_SMOKE_WRAPPED=1 "$@"
+	exit $?
+fi
+
+RECOIL_SMOKE_WRAPPED=1 "$@" &
+CMD_PID="$!"
 
 wait "$CMD_PID"

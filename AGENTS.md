@@ -42,6 +42,7 @@ Whenever Apple Silicon or Rosetta x86 bring-up changes, update those docs in the
 - Preserve existing Linux, Windows, and `x86_64` behavior unless a broader change is intentionally validated cross-platform.
 - Prefer localized hooks, compatibility layers, proxy widgets, and translation shims over broad shared-code rewrites.
 - Keep smoke, render, and playability validation inside the engine and repo-local validation scripts.
+- For macOS GUI validation, confirm the shell has a visible Aqua-attached display session before treating `SDL` display-init failures as engine regressions.
 - Capture a known-good baseline before changing a behavior-sensitive subsystem.
 - Treat determinism, rendering parity, and existing-platform stability as separate validation gates.
 - Keep workspace-specific absolute paths out of committed docs and scripts.
