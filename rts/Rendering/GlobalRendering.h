@@ -334,6 +334,9 @@ public:
 	 * Shader capabilities
 	 */
 	bool haveGL4;
+	bool supportSSBO;
+	bool supportLuaSSBO;
+	bool supportSafeDeferredPost;
 
 	/**
 	 * Shader capabilities
@@ -411,6 +414,7 @@ public:
 	static constexpr uint32_t FRAME_REF_TIME_QUERY_IDX = 0;
 	static constexpr uint32_t FRAME_END_TIME_QUERY_IDX = NUM_OPENGL_TIMER_QUERIES - 1;
 private:
+	void UpdateGLDerivedSupportFlags();
 	void SetMinSampleShadingRate();
 	bool SetWindowMinMaximized(bool maximize) const;
 private:
@@ -425,4 +429,3 @@ private:
 extern CGlobalRendering* globalRendering;
 
 #endif /* _GLOBAL_RENDERING_H */
-

@@ -231,7 +231,7 @@ namespace {
 
 	static bool SupportsShaderStorageBufferObjects()
 	{
-		return VBO::IsSupported(GL_SHADER_STORAGE_BUFFER) && IS_GL_FUNCTION_AVAILABLE(glShaderStorageBlockBinding);
+		return (globalRendering != nullptr && globalRendering->supportLuaSSBO);
 	}
 
 	static bool SupportsLayoutBindingQualifiers()

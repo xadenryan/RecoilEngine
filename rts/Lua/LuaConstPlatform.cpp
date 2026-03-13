@@ -110,6 +110,12 @@ bool LuaConstPlatform::PushEntries(lua_State* L)
 	LuaPushNamedBool(L, "glHaveGLSL", true);
 	/*** @field Platform.glHaveGL4 boolean */
 	LuaPushNamedBool(L, "glHaveGL4", globalRendering->haveGL4);
+	/*** @field Platform.glSupportSSBO boolean True when SSBO buffers are usable for engine-side binding and have non-zero reported limits. */
+	LuaPushNamedBool(L, "glSupportSSBO", globalRendering->supportSSBO);
+	/*** @field Platform.glSupportLuaSSBO boolean True when Lua shader code can use SSBOs, including `glShaderStorageBlockBinding`. */
+	LuaPushNamedBool(L, "glSupportLuaSSBO", globalRendering->supportLuaSSBO);
+	/*** @field Platform.glSupportSafeDeferredPost boolean Conservative platform contract for Lua/UI deferred and post-processing paths. */
+	LuaPushNamedBool(L, "glSupportSafeDeferredPost", globalRendering->supportSafeDeferredPost);
 
 	/*** @field Platform.glSupportDepthBufferBitDepth number */
 	LuaPushNamedNumber(L, "glSupportDepthBufferBitDepth", globalRendering->supportDepthBufferBitDepth);

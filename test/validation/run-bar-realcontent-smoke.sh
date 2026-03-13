@@ -98,6 +98,7 @@ if [ "$(uname -s)" = "Darwin" ] && [ "${RECOIL_MACOS_SKIP_GUI_SESSION_CHECK:-0}"
 				RECOIL_BAR_VALIDATION_HIDE_CURSOR="${RECOIL_BAR_VALIDATION_HIDE_CURSOR:-}" \
 				RECOIL_BAR_VALIDATION_CAMERA_HEIGHT="${RECOIL_BAR_VALIDATION_CAMERA_HEIGHT:-}" \
 				RECOIL_BAR_VALIDATION_CAMERA_BACK_OFFSET="${RECOIL_BAR_VALIDATION_CAMERA_BACK_OFFSET:-}" \
+				RECOIL_BAR_VALIDATION_WIDGET_PROFILE="${RECOIL_BAR_VALIDATION_WIDGET_PROFILE:-}" \
 				RECOIL_BAR_SMOKE_HIDDEN="${RECOIL_BAR_SMOKE_HIDDEN:-}" \
 				RECOIL_RENDER_CAPTURE_WRITE_BASELINE="${RECOIL_RENDER_CAPTURE_WRITE_BASELINE:-}" \
 				PRD_RAPID_USE_STREAMER="${PRD_RAPID_USE_STREAMER:-}" \
@@ -151,8 +152,10 @@ VALIDATION_SCENE_ONLY="${RECOIL_BAR_VALIDATION_SCENE_ONLY:-1}"
 VALIDATION_HIDE_CURSOR="${RECOIL_BAR_VALIDATION_HIDE_CURSOR:-1}"
 VALIDATION_CAMERA_HEIGHT="${RECOIL_BAR_VALIDATION_CAMERA_HEIGHT:-1200}"
 VALIDATION_CAMERA_BACK_OFFSET="${RECOIL_BAR_VALIDATION_CAMERA_BACK_OFFSET:-900}"
+VALIDATION_WIDGET_PROFILE="${RECOIL_BAR_VALIDATION_WIDGET_PROFILE:-default}"
 WINDOW_HIDDEN="${RECOIL_BAR_SMOKE_HIDDEN:-}"
 BYAR_CONFIG_PATH=""
+BYAR_CONFIG_SOURCE_PATH=""
 COMPARE_EXIT=0
 
 cleanup() {
@@ -200,7 +203,27 @@ find_cached_map_archive() {
 print_bar_ui_diagnostics() {
 	"$SCRIPT_DIR/report-bar-ui-diagnostics.sh" \
 		"$ISOLATION_DIR/infolog.txt" \
-		"$BYAR_CONFIG_PATH"
+		"$BYAR_CONFIG_PATH" \
+		"$VALIDATION_WIDGET_PROFILE"
+}
+
+resolve_byar_config_source() {
+	case "$VALIDATION_WIDGET_PROFILE" in
+		''|default)
+			printf '%s\n' "$VALIDATION_LUAUI_CONFIG_DIR/BYAR.lua"
+		;;
+		macos-minimap-screencopy-triage)
+			printf '%s\n' "$VALIDATION_LUAUI_CONFIG_DIR/BYAR.macos-minimap-screencopy-triage.lua"
+		;;
+		macos-postfx-triage)
+			printf '%s\n' "$VALIDATION_LUAUI_CONFIG_DIR/BYAR.macos-postfx-triage.lua"
+		;;
+		*)
+			echo "Unknown RECOIL_BAR_VALIDATION_WIDGET_PROFILE: $VALIDATION_WIDGET_PROFILE" >&2
+			echo "Available BAR validation widget profiles: default, macos-minimap-screencopy-triage, macos-postfx-triage" >&2
+			exit 1
+		;;
+	esac
 }
 
 select_first_present_capture_frame() {
@@ -291,10 +314,14 @@ cp -R "$ROOT_DIR/cont/base/springcontent" "$ISOLATION_DIR/base/springcontent.sdd
 cp -R "$ROOT_DIR/cont/LuaUI"              "$ISOLATION_DIR/LuaUI"
 cp -R "$ROOT_DIR/cont/fonts"              "$ISOLATION_DIR/fonts"
 BYAR_CONFIG_PATH="$ISOLATION_DIR/LuaUI/Config/BYAR.lua"
+BYAR_CONFIG_SOURCE_PATH="$(resolve_byar_config_source)"
 
-if [ -f "$VALIDATION_LUAUI_CONFIG_DIR/BYAR.lua" ]; then
-	cp "$VALIDATION_LUAUI_CONFIG_DIR/BYAR.lua" "$BYAR_CONFIG_PATH"
+if [ ! -f "$BYAR_CONFIG_SOURCE_PATH" ]; then
+	echo "BAR real-content smoke failed: missing BYAR validation profile source $BYAR_CONFIG_SOURCE_PATH." >&2
+	exit 1
 fi
+
+cp "$BYAR_CONFIG_SOURCE_PATH" "$BYAR_CONFIG_PATH"
 
 cat > "$ISOLATION_DIR/script.txt" <<EOF
 [GAME]
@@ -453,6 +480,8 @@ fi
 echo "BAR real-content smoke passed."
 echo "Cache dir: $CACHE_DIR"
 echo "Isolation dir: $ISOLATION_DIR"
+echo "BAR validation widget profile: $VALIDATION_WIDGET_PROFILE"
+echo "BAR validation profile source: $BYAR_CONFIG_SOURCE_PATH"
 echo "Screenshot: $SCREENSHOT_PATH"
 if [ -n "$VALIDATION_SCREENSHOT_PATH" ]; then
 	echo "Validation screenshot: $VALIDATION_SCREENSHOT_PATH"

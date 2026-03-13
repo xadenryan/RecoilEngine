@@ -45,6 +45,9 @@ namespace {
 
 	bool HasShaderStorageBufferObjectSupport()
 	{
+		if (globalRendering != nullptr)
+			return globalRendering->supportSSBO;
+
 		return GLAD_GL_ARB_shader_storage_buffer_object || GLAD_GL_VERSION_4_3;
 	}
 
@@ -75,7 +78,7 @@ bool VBO::IsSupported(GLenum target) {
 	static bool isPBOSupported  = HasPixelBufferObjectSupport();
 	static bool isVBOSupported  = HasVertexBufferObjectSupport();
 	static bool isUBOSupported  = HasUniformBufferObjectSupport();
-	static bool isSSBOSupported = HasShaderStorageBufferObjectSupport();
+	const bool isSSBOSupported = HasShaderStorageBufferObjectSupport();
 	static bool isCopyBuffSupported = HasCopyBufferSupport();
 
 	switch (target) {

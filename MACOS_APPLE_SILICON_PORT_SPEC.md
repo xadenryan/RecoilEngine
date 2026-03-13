@@ -11,6 +11,100 @@ For machine-specific bootstrap details, concrete package versions, and host-pref
 - [MACOS_APPLE_SILICON_SETUP.md](MACOS_APPLE_SILICON_SETUP.md)
 - [MACOS_X86_REFERENCE_SETUP.md](MACOS_X86_REFERENCE_SETUP.md)
 
+## Before Starting: Install Dependencies
+
+Before touching the code, make sure the machine has the current native and reference-build prerequisites installed.
+
+Read first:
+
+- [MACOS_APPLE_SILICON_SETUP.md](MACOS_APPLE_SILICON_SETUP.md)
+- [MACOS_X86_REFERENCE_SETUP.md](MACOS_X86_REFERENCE_SETUP.md)
+
+Do these setup steps in order on a fresh Apple Silicon machine:
+
+1. Verify the normal Apple Silicon Homebrew is still the default one.
+   Commands:
+   ```bash
+   which brew
+   brew --prefix
+   ```
+   Expected result:
+   `brew` resolves to the Apple Silicon prefix under `/opt/homebrew`.
+   Why:
+   the normal shell on this machine must keep using Apple Silicon Homebrew by default.
+
+2. Install Rosetta Homebrew into `/usr/local` if it is not already present.
+   Command:
+   ```bash
+   arch -x86_64 /bin/bash -lc \
+	'NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"'
+   ```
+   Important rule:
+   do not add `eval "$(/usr/local/bin/brew shellenv zsh)"` to the normal shell profile.
+   Why:
+   the Rosetta Homebrew must exist for project-specific `x86_64` work, but it must not replace the normal Apple Silicon `brew`.
+
+3. Install the native Apple Silicon dependencies.
+   Command:
+   ```bash
+   brew install sdl2 freetype fontconfig libogg libvorbis pkgconf devil openal-soft sevenzip
+   ```
+
+4. Install the Rosetta `x86_64` reference-build dependencies explicitly through the `/usr/local` brew.
+   Command:
+   ```bash
+   arch -x86_64 /usr/local/bin/brew install \
+	bash sdl2 freetype fontconfig libogg libvorbis pkgconf devil openal-soft sevenzip
+   ```
+   Why:
+   the same-machine `x86_64` control build must link against `/usr/local` x86 libraries, not against `/opt/homebrew` Apple Silicon libraries.
+
+5. Verify both Homebrew prefixes before building.
+   Commands:
+   ```bash
+   brew --prefix
+   arch -x86_64 /usr/local/bin/brew --prefix
+   ```
+   Expected result:
+   the native prefix reports `/opt/homebrew` and the Rosetta prefix reports `/usr/local`.
+   Why:
+   if those prefixes are wrong, the later `x86_64` CMake build will mix architectures and fail at link time.
+
+Native Apple Silicon prerequisites:
+
+```bash
+brew install sdl2 freetype fontconfig libogg libvorbis pkgconf devil openal-soft sevenzip
+```
+
+Rosetta `x86_64` reference-build prerequisites:
+
+```bash
+arch -x86_64 /usr/local/bin/brew install \
+	bash sdl2 freetype fontconfig libogg libvorbis pkgconf devil openal-soft sevenzip
+```
+
+Other required tooling:
+
+- a full Xcode toolchain with Apple Clang and Swift available in the shell
+- CMake available in the shell
+- a visible macOS GUI login session for graphical-client smoke and render validation
+
+Verify the prerequisites before doing any code work:
+
+```bash
+brew --prefix
+cmake --version
+swift --version
+clang --version
+arch -x86_64 /usr/local/bin/brew --prefix
+```
+
+Why these checks matter:
+
+- they confirm the native Homebrew prefix still points at Apple Silicon packages
+- they confirm the Rosetta Homebrew prefix exists separately for the same-machine `x86_64` control build
+- they confirm the shell can see the compiler and Swift toolchain used by the validation helpers
+
 ## Scope
 
 This spec covers:
@@ -95,6 +189,7 @@ Current known-good Apple Silicon bring-up status:
 - the legacy blank-map GUI smoke passes in a visible macOS GUI session
 - the blank-map render smoke captures deterministic screenshots and can compare them exactly
 - the BAR real-content smoke boots a narrowed BAR fixture, captures a deterministic validation frame, and compares it within the documented BAR-specific tolerance
+- the BAR real-content smoke can now opt into validation-only macOS BAR widget triage profiles inside the isolated fixture without changing default BAR behavior
 - the engine-owned present-capture path is working and can emit present frames for BAR playability review
 - the same-machine Rosetta `x86_64` client and `pr-downloader_cli` now build on this machine and can be used as the preferred render-comparison reference path
 
@@ -103,6 +198,7 @@ Current known limitations:
 - streflop-backed sync-safe determinism is not yet re-established for Apple Silicon
 - the Apple Silicon BAR fixture is still a narrowed validation scene, not full gameplay parity
 - the selected first non-black present frame is still supplementary; the authoritative comparison target remains the normal validation screenshot
+- the validation-only BAR widget triage profiles are narrower fixture knobs, not proof of full BAR UI or post-processing parity
 - several BAR GL4 and SSBO-backed widgets still rely on documented fallbacks or removals
 - broader gameplay, replay, and full-UI parity are still unproven
 
@@ -400,6 +496,7 @@ Current important environment variables:
 - `RECOIL_BAR_VALIDATION_HIDE_CURSOR`
 - `RECOIL_BAR_VALIDATION_CAMERA_HEIGHT`
 - `RECOIL_BAR_VALIDATION_CAMERA_BACK_OFFSET`
+- `RECOIL_BAR_VALIDATION_WIDGET_PROFILE`
 - `RECOIL_BAR_RENDER_MAX_DIFF_PIXELS`
 - `RECOIL_BAR_RENDER_MAX_CHANNEL_DELTA`
 - `RECOIL_BAR_SMOKE_HIDDEN`
@@ -411,14 +508,58 @@ Required fixture behavior:
 - use `RECOIL_BAR_SKIP_DOWNLOAD=1` for repeat runs against a known-good warmed cache
 - repo-local `cont/LuaUI` overrides staged into the fixture
 - minimal validation-only `BYAR.lua`
+- optional validation-only BAR widget profiles staged through `BYAR.lua` in the isolated fixture only
 - engine-owned screenshot capture
 - BAR UI diagnostics emitted after the run
 
 Current comparison contract:
 
 - the normal validation screenshot is authoritative
+- same-machine Rosetta `x86_64` and native `arm64` comparisons must use the same widget-profile state
 - current BAR tolerance is `256` diff pixels and max channel delta `2`
 - failed compares must continue printing measured drift
+
+Current known-good native BAR command:
+
+```bash
+RECOIL_BAR_CONTENT_CACHE_DIR="<warmed-cache-dir>" \
+RECOIL_BAR_SKIP_DOWNLOAD=1 \
+RECOIL_BAR_VALIDATION_HIDE_INTERFACE=0 \
+RECOIL_BAR_VALIDATION_SCENE_ONLY=0 \
+RECOIL_BAR_VALIDATION_CENTER_CAMERA=0 \
+RECOIL_BAR_VALIDATION_PLAYER_START_CAMERA=0 \
+RECOIL_BAR_CAPTURE_FRAME=180 \
+./test/validation/run-bar-realcontent-smoke.sh \
+	./build-macos-legacy-verify/spring \
+	./build-macos-legacy-verify/tools/pr-downloader/src/pr-downloader \
+	180
+```
+
+Why this command is the current baseline:
+
+- it is the current native Apple Silicon BAR command that repeatedly produces a screenshot instead of dying before capture
+- it avoids the currently unstable forced-center-camera path
+- it keeps the interface visible so the HUD and composition problem can be observed rather than hidden
+
+Known current repro for the unstable center-camera branch:
+
+```bash
+RECOIL_BAR_CONTENT_CACHE_DIR="<warmed-cache-dir>" \
+RECOIL_BAR_SKIP_DOWNLOAD=1 \
+RECOIL_BAR_VALIDATION_HIDE_INTERFACE=0 \
+RECOIL_BAR_VALIDATION_SCENE_ONLY=0 \
+RECOIL_BAR_CAPTURE_FRAME=60 \
+./test/validation/run-bar-realcontent-smoke.sh \
+	./build-macos-legacy-verify/spring \
+	./build-macos-legacy-verify/tools/pr-downloader/src/pr-downloader \
+	180
+```
+
+Why this repro matters:
+
+- it exercises the current default forced-center-camera path
+- it still intermittently or repeatedly dies before writing a screenshot on macOS
+- it should stay documented as an explicit regression target until fixed
 
 ### BAR Playability And Observation Capture
 
@@ -599,6 +740,11 @@ Every entry in this registry must preserve four things:
 
 If any future edit compresses an entry so far that one of those four pieces becomes unclear, expand the entry instead of shortening it further.
 
+- Engine Lua capability contract for SSBO and deferred-post paths:
+  the engine now exports `Platform.glSupportSSBO`, `Platform.glSupportLuaSSBO`, and `Platform.glSupportSafeDeferredPost` as the additive capability surface Lua code should prefer over optimistic extension checks or overloading `glHaveGL4`.
+  Why: the Apple OpenGL 4.1 path needs a stricter truth for usable SSBO bindings and a conservative "safe deferred/post" signal so BAR and other Lua UI/effect code can degrade maintainably without treating generic GL4-era capability checks as proof that SSBO-backed or deferred/post-processing paths are actually safe here.
+  Verification impact: on Apple the safe deferred/post flag is intentionally forced off until the affected composition paths are re-verified, while Linux and Windows keep their existing behavior unless SSBO bindings are genuinely unusable.
+
 - Determinism:
   streflop is currently disabled for the native Apple Silicon bring-up path.
   Why: the current `arm64` build path is being brought up first, and sync-safe floating-point behavior has not been re-established yet.
@@ -672,10 +818,22 @@ If any future edit compresses an entry so far that one of those four pieces beco
   Exit criteria: replace each proxy only after the corresponding BAR widget runs correctly on Apple OpenGL 4.1 or a stronger cross-platform fallback is verified for the macOS fixture.
 
 - BAR LuaUI config dependency:
-  `test/validation/run-bar-realcontent-smoke.sh` currently stages `cont/LuaUI`, copies the minimal validation-only `test/validation/LuaUI/Config/BYAR.lua` into `LuaUI/Config/BYAR.lua`, and sets `LuaAutoEnableUserWidgets = 1`, so the validated widget set, `Top Bar` ordering, and BAR user-widget path now follow a narrower repo-pinned fixture instead of BAR's larger generated runtime config.
-  Why: the current fixture still wants BAR's user-widget path enabled, but it now needs a minimal deterministic `BYAR.lua` so validation does not drift with prior BAR sessions or host-saved widget state while the repo-local raw-widget hotfixes stay in place.
-  Verification impact: BAR smoke currently proves this hybrid path of repo-local raw overrides plus the staged minimal validation `BYAR.lua`, not a fully user-config-independent BAR bootstrap or a proof that every BAR widget ordering path is stable without the pinned fixture.
-  Exit criteria: keep the staged validation-only `BYAR.lua` narrow and documented until BAR smoke remains stable without it or until a stronger long-term validation config story replaces this minimal pinned fixture.
+  `test/validation/run-bar-realcontent-smoke.sh` currently stages `cont/LuaUI`, copies a repo-pinned validation-only `test/validation/LuaUI/Config/BYAR*.lua` profile into `LuaUI/Config/BYAR.lua`, and sets `LuaAutoEnableUserWidgets = 1`, so the validated widget set, `Top Bar` ordering, and BAR user-widget path now follow a narrower repo-pinned fixture instead of BAR's larger generated runtime config.
+  Why: the current fixture still wants BAR's user-widget path enabled, but it now needs a deterministic `BYAR.lua` profile story so validation does not drift with prior BAR sessions or host-saved widget state while the repo-local raw-widget hotfixes stay in place.
+  Verification impact: BAR smoke currently proves this hybrid path of repo-local raw overrides plus the staged validation `BYAR.lua` profile, not a fully user-config-independent BAR bootstrap or a proof that every BAR widget ordering path is stable without the pinned fixture.
+  Exit criteria: keep the staged validation-only `BYAR.lua` profiles narrow and documented until BAR smoke remains stable without them or until a stronger long-term validation config story replaces this pinned fixture surface.
+
+- BAR validation-only post-processing triage profile:
+  `test/validation/run-bar-realcontent-smoke.sh` now supports `RECOIL_BAR_VALIDATION_WIDGET_PROFILE=macos-postfx-triage`, which stages `test/validation/LuaUI/Config/BYAR.macos-postfx-triage.lua` into the isolated fixture and disables the first-pass BAR post/deferred suspects `Distortion GL4`, `SSAO`, `Bloom Shader Deferred`, `Stained Glass`, and `Unit Stencil GL4`.
+  Why: the current macOS BAR capture is still visibly wrong even when the same failure reproduces on Rosetta `x86_64`, and present-capture drift is now modest enough that the fixture needs an additive, opt-in way to isolate whether a small set of screen-space or producer widgets is corrupting the composed BAR frame before widening engine-side changes.
+  Verification impact: a passing BAR smoke under this profile only proves the narrowed fixture can boot, capture, and compare with those widget surfaces disabled inside the isolated validation run; it does not prove parity for the disabled widgets, full BAR UI, or broader post-processing behavior.
+  Exit criteria: remove or shrink this profile only after the narrowed fixture no longer needs it or after each disabled BAR surface is individually re-verified against a known-good reference and documented as restored.
+
+- BAR validation-only minimap/screencopy triage profile:
+  `test/validation/run-bar-realcontent-smoke.sh` now supports `RECOIL_BAR_VALIDATION_WIDGET_PROFILE=macos-minimap-screencopy-triage`, which stages `test/validation/LuaUI/Config/BYAR.macos-minimap-screencopy-triage.lua` into the isolated fixture and disables the minimap/composition suspects `Minimap`, `RelativeMinimap`, `API Screencopy Manager`, `Minimap Rotation Manager`, and `GUI Shader`.
+  Why: after the post-processing triage profile held viewport size steady but left the same minimap-sized scissor contamination in place, the next likely source became BAR's minimap and screencopy composition path rather than the first-pass post/deferred widget set.
+  Verification impact: a passing BAR smoke under this profile only proves the narrowed fixture can boot, capture, and compare with those minimap and screencopy-related widget surfaces disabled inside the isolated validation run; it does not prove minimap correctness, full BAR UI parity, or that the disabled widgets are long-term macOS failures.
+  Exit criteria: remove or shrink this profile only after the narrowed fixture no longer needs it or after each disabled BAR surface is individually re-verified against a known-good reference and documented as restored.
 
 - BAR GL4 widget surface:
   BAR real-content startup currently disables a number of optional GL4 Lua widgets and effects on the native macOS Apple Silicon path.
@@ -720,11 +878,10 @@ If any future edit compresses an entry so far that one of those four pieces beco
   Exit criteria: restore these surfaces to automated parity coverage once they have a stable fixture or a dedicated comparison harness that can verify them without reintroducing flaky captures.
 
 - Validation capture camera path:
-  the automated render-capture path currently relies on explicit camera steering through `ValidationRenderCaptureCenterCamera`, `ValidationRenderCapturePlayerStartCamera`, `ValidationRenderCaptureCameraHeight`, and `ValidationRenderCaptureCameraBackOffset`, and the BAR real-content fixture uses the center-camera branch rather than BAR's own startup camera state.
-  Why: BAR startup camera behavior and local player start positions are not stable enough for a repeatable regression frame on this machine, so the validation hook now forces a deterministic center-map capture path with documented offsets.
-  Timing note: camera steering now applies during `UpdateUnsynced()` immediately after `camHandler->UpdateController(...)` and before the live camera, world drawer, and uniform prep update for the capture frame; the old late-`Draw()` hook was too late to affect the rendered frame.
-  Verification impact: successful BAR render validation currently proves the documented center-camera scene matches the baseline within tolerance, not that arbitrary startup-camera scenes or player-start-camera captures are already stable on this macOS path.
-  Exit criteria: keep the explicit camera steering until BAR validation no longer depends on it or until a broader replay or scenario-based capture harness can verify camera parity without relying on a forced center-map view.
+  the automated render-capture path currently supports explicit camera steering through `ValidationRenderCaptureCenterCamera`, `ValidationRenderCapturePlayerStartCamera`, `ValidationRenderCaptureCameraHeight`, and `ValidationRenderCaptureCameraBackOffset`, but the currently repeatable native BAR validation command explicitly disables both forced-camera modes.
+  Why: BAR startup camera behavior and local player start positions are not stable enough for a repeatable regression frame on this machine, and the current forced-center-camera path can still die before screenshot creation on macOS even after the guard that prevents pregame camera steering before `gs->frameNum >= 0`.
+  Verification impact: successful BAR validation currently proves the documented no-forced-camera fixture can boot and capture a frame, not that the default forced-center-camera or player-start-camera branches are stable on macOS.
+  Exit criteria: restore the forced-camera path only after the default BAR smoke can use `ValidationRenderCaptureCenterCamera = 1` repeatedly without dying before screenshot creation and after the captured frame matches the intended scene closely enough to become the authoritative baseline.
 
 - Sky rendering:
   `ISky::SetSky` can currently fail to create `ModernSky` on the Apple core-profile path and fall back to `NullSky`.
@@ -786,15 +943,272 @@ If any future edit compresses an entry so far that one of those four pieces beco
 
 - restore or replace sync-safe determinism validation for Apple Silicon
 - prove a believable playable BAR frame with the expected top bar, minimap, lower-left HUD, and world composition
+- stabilize the forced-center-camera BAR capture path or formally retire it from the default validation flow
 - reduce or remove BAR GL4 and SSBO fallback surfaces
+- determine whether the remaining BAR composition fault lives in `Top Bar`, `FlowUI`, `Order menu`, `Grid menu`, or a lower shared UI composition helper
+- land a usable-SSBO / safe-deferred Lua capability story so BAR widgets can make correct decisions on macOS without platform-name special cases
 - revalidate sky, dynamic-light, and depth-copy dependent rendering paths
 - expand from the current narrowed BAR fixture to broader gameplay, replay, or scenario-based comparisons
 - prove that Apple Silicon behavior remains compatible with existing supported platforms as the compatibility surface narrows
 
 ## Practical Next-Step Sequence
 
-1. Keep the Rosetta `x86_64` reference build healthy and use it as the primary rendering baseline.
-2. Tighten the BAR playability fixture until the analyzer and manual review both accept the output as believable.
-3. Replace BAR fallbacks one surface at a time, validating each against the Rosetta reference before removing the note from this spec.
-4. Reintroduce determinism work only after the current graphical validation story is stable enough to isolate math and sync regressions.
-5. Continue landing changes in small, reviewable increments with validation attached to each step.
+Follow this sequence in order. Do not skip verification, and do not widen the shared engine surface until the current step is understood.
+
+1. Re-establish the native Apple Silicon baseline before changing code.
+   Files to read:
+   `MACOS_APPLE_SILICON_SETUP.md`, `MACOS_X86_REFERENCE_SETUP.md`, `test/validation/run-bar-realcontent-smoke.sh`, `test/validation/report-bar-ui-diagnostics.sh`.
+   Commands to run:
+   ```bash
+   cmake --build build-macos-legacy-verify --target engine-legacy -j4
+   ./test/validation/run-legacy-render-smoke.sh ./build-macos-legacy-verify/spring
+   RECOIL_BAR_CONTENT_CACHE_DIR="<warmed-cache-dir>" \
+   RECOIL_BAR_SKIP_DOWNLOAD=1 \
+   RECOIL_BAR_VALIDATION_HIDE_INTERFACE=0 \
+   RECOIL_BAR_VALIDATION_SCENE_ONLY=0 \
+   RECOIL_BAR_VALIDATION_CENTER_CAMERA=0 \
+   RECOIL_BAR_VALIDATION_PLAYER_START_CAMERA=0 \
+   RECOIL_BAR_CAPTURE_FRAME=180 \
+   ./test/validation/run-bar-realcontent-smoke.sh \
+	./build-macos-legacy-verify/spring \
+	./build-macos-legacy-verify/tools/pr-downloader/src/pr-downloader \
+	180
+   ```
+   Why these commands matter:
+   the first command proves the native client still builds.
+   the second command proves the generic engine-owned render capture path still works.
+   the BAR command proves the current native BAR baseline still produces a screenshot with the documented no-forced-camera fixture.
+   Complete when:
+   all three commands pass, a BAR screenshot path is produced, and no stray `spring`, `spring-headless`, `spring-dedicated`, or smoke-wrapper processes remain running.
+
+2. Keep the same-machine Rosetta `x86_64` reference healthy before trusting native render changes.
+   Files to read:
+   `MACOS_X86_REFERENCE_SETUP.md`, `test/validation/run-bar-realcontent-smoke.sh`, `test/validation/compare-render-images.sh`.
+   Commands to run:
+   ```bash
+   arch -x86_64 /bin/zsh -lc 'cmake --build build-macos-x86-cross-probe-clean2 --target engine-legacy -j4'
+   RECOIL_BAR_CONTENT_CACHE_DIR="<warmed-cache-dir>" \
+   RECOIL_BAR_SKIP_DOWNLOAD=1 \
+   RECOIL_BAR_VALIDATION_HIDE_INTERFACE=0 \
+   RECOIL_BAR_VALIDATION_SCENE_ONLY=0 \
+RECOIL_BAR_VALIDATION_CENTER_CAMERA=0 \
+RECOIL_BAR_VALIDATION_PLAYER_START_CAMERA=0 \
+RECOIL_BAR_CAPTURE_FRAME=180 \
+./test/validation/run-bar-realcontent-smoke.sh \
+	./build-macos-x86-cross-probe-clean2/spring \
+	./build-macos-x86-cross-probe-clean2/tools/pr-downloader/src/pr-downloader \
+	180
+   ./test/validation/compare-render-images.sh <x86-reference.png> <arm64-capture.png>
+   ```
+   Why these commands matter:
+   the Rosetta build is the best apples-to-apples control because it uses the same macOS OpenGL stack on the same machine.
+   the compare step tells you whether a native change moved the image closer to or farther from the control.
+   Complete when:
+   the Rosetta build succeeds, the Rosetta BAR smoke produces a screenshot, and you can compare Rosetta and native images with the same widget profile and same camera settings.
+
+3. Reproduce the current failure modes before trying to fix them.
+   Files to read:
+   `rts/Game/Game.cpp`, `MACOS_APPLE_SILICON_PORT_SPEC.md`, the `infolog.txt` inside the latest BAR isolation directory.
+   Commands to run:
+   ```bash
+   RECOIL_BAR_CONTENT_CACHE_DIR="<warmed-cache-dir>" \
+RECOIL_BAR_SKIP_DOWNLOAD=1 \
+RECOIL_BAR_VALIDATION_HIDE_INTERFACE=0 \
+RECOIL_BAR_VALIDATION_SCENE_ONLY=0 \
+RECOIL_BAR_CAPTURE_FRAME=60 \
+./test/validation/run-bar-realcontent-smoke.sh \
+	./build-macos-legacy-verify/spring \
+	./build-macos-legacy-verify/tools/pr-downloader/src/pr-downloader \
+	180
+   rg -n "ValidationRenderState|Loading widget from mod:|Loading widget from user:|Missing capabilities:" <isolation-dir>/infolog.txt
+   ```
+   Why these commands matter:
+   the first command reproduces the unstable forced-center-camera default path.
+   the `rg` command shows which widgets were active and what GL state was logged around the captured frame.
+   Complete when:
+   you can reliably say whether you are working on the known-good no-forced-camera baseline or the still-broken forced-center-camera branch.
+
+4. Use the fixture-only widget triage profiles before changing shared engine behavior.
+   Files to read:
+   `test/validation/LuaUI/Config/BYAR.lua`,
+   `test/validation/LuaUI/Config/BYAR.macos-postfx-triage.lua`,
+   `test/validation/LuaUI/Config/BYAR.macos-minimap-screencopy-triage.lua`,
+   `test/validation/run-bar-realcontent-smoke.sh`,
+   `test/validation/report-bar-ui-diagnostics.sh`.
+   Commands to run:
+   ```bash
+   RECOIL_BAR_CONTENT_CACHE_DIR="<warmed-cache-dir>" \
+   RECOIL_BAR_SKIP_DOWNLOAD=1 \
+   RECOIL_BAR_VALIDATION_HIDE_INTERFACE=0 \
+   RECOIL_BAR_VALIDATION_SCENE_ONLY=0 \
+RECOIL_BAR_VALIDATION_CENTER_CAMERA=0 \
+RECOIL_BAR_VALIDATION_PLAYER_START_CAMERA=0 \
+RECOIL_BAR_CAPTURE_FRAME=180 \
+RECOIL_BAR_VALIDATION_WIDGET_PROFILE=macos-postfx-triage \
+./test/validation/run-bar-realcontent-smoke.sh \
+	./build-macos-legacy-verify/spring \
+	./build-macos-legacy-verify/tools/pr-downloader/src/pr-downloader \
+	180
+   RECOIL_BAR_CONTENT_CACHE_DIR="<warmed-cache-dir>" \
+   RECOIL_BAR_SKIP_DOWNLOAD=1 \
+   RECOIL_BAR_VALIDATION_HIDE_INTERFACE=0 \
+   RECOIL_BAR_VALIDATION_SCENE_ONLY=0 \
+RECOIL_BAR_VALIDATION_CENTER_CAMERA=0 \
+RECOIL_BAR_VALIDATION_PLAYER_START_CAMERA=0 \
+RECOIL_BAR_CAPTURE_FRAME=180 \
+RECOIL_BAR_VALIDATION_WIDGET_PROFILE=macos-minimap-screencopy-triage \
+./test/validation/run-bar-realcontent-smoke.sh \
+	./build-macos-legacy-verify/spring \
+	./build-macos-legacy-verify/tools/pr-downloader/src/pr-downloader \
+	180
+   ./test/validation/analyze-render-image.sh <capture.png>
+   ```
+   Why these commands matter:
+   the postfx profile answers whether the deferred/post stack is the primary problem.
+   the minimap/screencopy profile answers whether the minimap and screen-copy path is the primary problem.
+   the analyzer gives a repeatable summary instead of relying on memory.
+   Complete when:
+   you record which profile changed viewport behavior, which profile changed scissor behavior, and whether either profile actually produced a more believable frame. Today, both profiles are documented as informative but not sufficient.
+
+5. Investigate the remaining BAR UI/composition path one narrow surface at a time.
+   Files to inspect first:
+   `cont/LuaUI/Headers/bar_widget_proxy_loader.lua`,
+   `cont/LuaUI/Widgets/`,
+   `test/validation/run-bar-realcontent-smoke.sh`,
+   `test/validation/report-bar-ui-diagnostics.sh`.
+   BAR widget names to inspect first inside the BAR content archive:
+   `gui_minimap.lua`,
+   `minimap_relative.lua`,
+   `api_screencopy_manager.lua`,
+   `gfx_guishader.lua`,
+   `gui_top_bar.lua`,
+   `gui_gridmenu.lua`,
+   `gui_ordermenu.lua`,
+   `gui_flowui.lua`.
+   Commands to run:
+   ```bash
+   rg -n "ValidationRenderState" <isolation-dir>/infolog.txt
+   rg -n "Loading widget from mod:|Loading widget from user:" <isolation-dir>/infolog.txt
+   ./test/validation/analyze-render-image.sh <capture.png>
+   ./test/validation/compare-render-images.sh <older-capture.png> <new-capture.png>
+   ```
+   Why these commands matter:
+   the validation-state log tells you whether viewport or scissor contamination changed.
+   the widget load list tells you which BAR surfaces were actually active for that run.
+   the analyzer and compare tools tell you whether the image really improved.
+   Complete when:
+   you can name one remaining BAR surface that materially improves or materially worsens the frame when isolated, and you record that outcome in this spec.
+
+6. Only after the fixture evidence is clear, tighten the engine capability story.
+   Files to inspect:
+   `rts/Rendering/GlobalRendering.cpp`,
+   `rts/Rendering/GlobalRendering.h`,
+   `rts/Rendering/GL/VBO.cpp`,
+   `rts/Lua/LuaShaders.cpp`,
+   `rts/Lua/LuaConstPlatform.cpp`.
+   Work to do:
+   add a shared engine truth for usable SSBO support and expose conservative Lua-facing capability flags so BAR widgets stop assuming that extension presence automatically means the macOS context is safe for SSBO-backed or deferred/post widget paths.
+   Commands to run after any engine-side capability change:
+   ```bash
+   cmake --build build-macos-legacy-verify --target engine-legacy -j4
+   ./test/validation/run-legacy-render-smoke.sh ./build-macos-legacy-verify/spring
+   RECOIL_BAR_CONTENT_CACHE_DIR="<warmed-cache-dir>" \
+   RECOIL_BAR_SKIP_DOWNLOAD=1 \
+   RECOIL_BAR_VALIDATION_HIDE_INTERFACE=0 \
+   RECOIL_BAR_VALIDATION_SCENE_ONLY=0 \
+   RECOIL_BAR_VALIDATION_CENTER_CAMERA=0 \
+   RECOIL_BAR_VALIDATION_PLAYER_START_CAMERA=0 \
+   RECOIL_BAR_CAPTURE_FRAME=180 \
+   ./test/validation/run-bar-realcontent-smoke.sh \
+	./build-macos-legacy-verify/spring \
+	./build-macos-legacy-verify/tools/pr-downloader/src/pr-downloader \
+	180
+   ```
+   Why these commands matter:
+   the native build proves the engine still compiles.
+   the legacy render smoke proves the generic capture path still works.
+   the BAR smoke proves the capability change did not break the current BAR baseline.
+   Complete when:
+   capability reporting is stricter on macOS where needed, existing platforms keep their current behavior, and the spec is updated to describe the new flags and their verification story.
+
+7. Keep the spec and setup docs current in the same change set as the code.
+   Files to update when behavior changes:
+   `MACOS_APPLE_SILICON_PORT_SPEC.md`,
+   `MACOS_APPLE_SILICON_SETUP.md`,
+   `MACOS_X86_REFERENCE_SETUP.md`,
+   `AGENTS.md` if link structure or machine-status notes change.
+   Commands to run:
+   ```bash
+rg -n '(^|[^[:alnum:]_])(/[^[:space:]]+)' AGENTS.md MACOS_APPLE_SILICON_PORT_SPEC.md MACOS_APPLE_SILICON_SETUP.md MACOS_X86_REFERENCE_SETUP.md test/validation
+git diff --stat
+git status --short
+   ```
+   Why these commands matter:
+   they catch workspace-specific path leakage and make sure the docs match the actual branch.
+   Complete when:
+   every new dependency, disable, fallback, command, and current failure mode is documented and the docs are free of committed machine-specific absolute paths.
+
+8. Before calling any task complete, run the full verification set for the area you touched.
+   Minimum native graphical verification set:
+   ```bash
+   cmake --build build-macos-legacy-verify --target engine-legacy -j4
+   ./test/validation/run-legacy-render-smoke.sh ./build-macos-legacy-verify/spring
+   RECOIL_BAR_CONTENT_CACHE_DIR="<warmed-cache-dir>" \
+   RECOIL_BAR_SKIP_DOWNLOAD=1 \
+   RECOIL_BAR_VALIDATION_HIDE_INTERFACE=0 \
+   RECOIL_BAR_VALIDATION_SCENE_ONLY=0 \
+RECOIL_BAR_VALIDATION_CENTER_CAMERA=0 \
+RECOIL_BAR_VALIDATION_PLAYER_START_CAMERA=0 \
+RECOIL_BAR_CAPTURE_FRAME=180 \
+./test/validation/run-bar-realcontent-smoke.sh \
+	./build-macos-legacy-verify/spring \
+	./build-macos-legacy-verify/tools/pr-downloader/src/pr-downloader \
+	180
+   ```
+   Minimum comparison set when rendering changed:
+```bash
+./test/validation/analyze-render-image.sh <native-capture.png>
+./test/validation/compare-render-images.sh <rosetta-or-older-reference.png> <native-capture.png>
+```
+   Why these commands matter:
+   they are the smallest set that proves the engine still builds, the generic render path still captures, and the BAR path still produces an image that can be compared and analyzed.
+   Complete when:
+   the commands pass, the outputs are archived in the commit message or PR notes, and the spec records what changed and what remains unresolved.
+
+## When Stuck
+
+If you get stuck for more than one focused investigation cycle, use the `oracle` skill instead of free-form guessing.
+
+Use it like this:
+
+1. Build a tight file set first.
+   Include only the files that contain the truth for the problem you are asking about.
+2. Preview the payload before spending time or tokens.
+   Command:
+   ```bash
+   oracle --dry-run summary --files-report -p "<specific Apple Silicon question>" --file "rts/**" --file "test/validation/**" --file "!**/*.png"
+   ```
+3. Run the real request in browser mode when you want a second-model deep dive.
+   Command:
+   ```bash
+   oracle --engine browser --model gpt-5.2-pro --slug "macos-arm64-bar" -p "<specific Apple Silicon question>" --file "rts/**" --file "test/validation/**" --file "MACOS_APPLE_SILICON_PORT_SPEC.md"
+   ```
+4. Treat the answer as advisory, not authoritative.
+   You must still verify the suggestion against the code and by running the validation commands in this spec.
+
+Ask `oracle` questions like:
+
+- why does this macOS BAR path keep a `256x256` scissor box alive
+- what is the smallest safe way to expose usable SSBO capability to Lua
+- which of these BAR widgets are most likely to leak viewport or scissor state
+
+## Work Complete When
+
+The documentation and execution plan are complete when all of the following are true:
+
+- this spec names the current known-good native BAR command, the current known-bad repro command, and the current widget-triage profiles
+- this spec names the current strongest remaining suspects and the files to inspect next
+- the setup docs cover the host dependencies needed to reproduce the current validation flow
+- the validation commands in this spec are enough for a new engineer to rebuild, reproduce, compare, and analyze without asking for terminal history
+- every known disable, fallback, degradation, and validation-only profile in the branch is documented in this spec
+- the repo docs and scripts are free of workspace-specific absolute paths

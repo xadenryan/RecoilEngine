@@ -1626,6 +1626,9 @@ void CGame::ApplyValidationRenderCaptureCamera()
 	if (!validationRenderCapture || validationRenderCaptured)
 		return;
 
+	if (gs->frameNum < 0)
+		return;
+
 	if (!validationRenderCapturePlayerStartCamera && !validationRenderCaptureCenterCamera)
 		return;
 

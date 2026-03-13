@@ -265,6 +265,9 @@ CR_REG_METADATA(CGlobalRendering, (
 	CR_IGNORED(supportSeamlessCubeMaps),
 	CR_IGNORED(supportFragDepthLayout),
 	CR_IGNORED(haveGL4),
+	CR_IGNORED(supportSSBO),
+	CR_IGNORED(supportLuaSSBO),
+	CR_IGNORED(supportSafeDeferredPost),
 	CR_IGNORED(glslMaxVaryings),
 	CR_IGNORED(glslMaxAttributes),
 	CR_IGNORED(glslMaxDrawBuffers),
@@ -395,6 +398,9 @@ CGlobalRendering::CGlobalRendering()
 	, supportSeamlessCubeMaps(false)
 	, supportFragDepthLayout(false)
 	, haveGL4(false)
+	, supportSSBO(false)
+	, supportLuaSSBO(false)
+	, supportSafeDeferredPost(false)
 
 	, glslMaxVaryings(0)
 	, glslMaxAttributes(0)
@@ -753,6 +759,7 @@ void CGlobalRendering::PostInit() {
 	CheckGLExtensions();
 	SetGLSupportFlags();
 	QueryGLMaxVals();
+	UpdateGLDerivedSupportFlags();
 
 	LogVersionInfo(sdlVersionStr, glVidMemStr);
 	ToggleGLDebugOutput(0, 0, 0);
@@ -1065,6 +1072,24 @@ void CGlobalRendering::QueryGLMaxVals()
 	glslMaxVaryings /= 4;
 }
 
+void CGlobalRendering::UpdateGLDerivedSupportFlags()
+{
+	supportSSBO = static_cast<bool>(GLAD_GL_ARB_shader_storage_buffer_object || GLAD_GL_VERSION_4_3);
+	supportSSBO &= IS_GL_FUNCTION_AVAILABLE(glBindBufferRange);
+	supportSSBO &= (glslMaxStorageBufferBindings > 0);
+	supportSSBO &= (glslMaxStorageBufferSize > 0);
+
+	supportLuaSSBO = supportSSBO;
+	supportLuaSSBO &= IS_GL_FUNCTION_AVAILABLE(glShaderStorageBlockBinding);
+
+	supportSafeDeferredPost = haveGL4;
+	supportSafeDeferredPost &= supportLuaSSBO;
+
+	#if defined(__APPLE__)
+	supportSafeDeferredPost = false;
+	#endif
+}
+
 void CGlobalRendering::QueryVersionInfo(char (&sdlVersionStr)[64], char (&glVidMemStr)[64])
 {
 	auto& grInfo = globalRenderingInfo;
@@ -1127,6 +1152,9 @@ void CGlobalRendering::LogVersionInfo(const char* sdlVersionStr, const char* glV
 	LOG("\tInitialized OpenGL Context: %i.%i (%s)", globalRenderingInfo.glContextVersion.x, globalRenderingInfo.glContextVersion.y, globalRenderingInfo.glContextIsCore ? "Core" : "Compat");
 	LOG("\tGLSL shader support       : %i", true);
 	LOG("\tGL4 support               : %i", haveGL4);
+	LOG("\tSSBO support              : %i", supportSSBO);
+	LOG("\tLua SSBO support          : %i", supportLuaSSBO);
+	LOG("\tsafe deferred-post support: %i", supportSafeDeferredPost);
 	LOG("\tFBO extension support     : %i", FBO::IsSupported());
 	LOG("\tNVX GPU mem-info support  : %i", IsExtensionSupported("GL_NVX_gpu_memory_info"));
 	LOG("\tATI GPU mem-info support  : %i", IsExtensionSupported("GL_ATI_meminfo"));
