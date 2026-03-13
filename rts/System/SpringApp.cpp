@@ -117,6 +117,7 @@ CONFIG(bool, FontConfigSearchAttributes).defaultValue(true).description("Whether
 CONFIG(bool, FontConfigApplySubstitutions).defaultValue(true).description("[EXPERIMENTAL] In case it's disabled FcConfigSubstitute is not getting called, this might break non-ASCII font rendering.");
 CONFIG(int, MaxFontTries).defaultValue(5).description("Represents the maximum number of attempts to search for a glyph replacement using the FontConfig library (lower = foreign glyphs may fail to render, higher = searching for foreign glyphs can lag the game).");
 CONFIG(int, MaxPinnedFonts).defaultValue(10).description("Maximum number of fonts to pin to cache. Increasing this will eventually use more memory, but can alleviate processing spikes when rendering new glyphs.");
+CONFIG(bool, ValidationDisableSplashScreen).defaultValue(false).description("Validation-only: skips the splash-screen swap loop during filesystem initialization and only pumps events while waiting for the file system thread.");
 
 CONFIG(std::string, name).defaultValue(UnnamedPlayerName).description("Sets your name in the game. Since this is overridden by lobbies with your lobby username when playing, it usually only comes up when viewing replays or starting the engine directly for testing purposes.");
 CONFIG(std::string, DefaultStartScript).defaultValue("").description("filename of script.txt to use when no command line parameters are specified.");
@@ -401,11 +402,21 @@ bool SpringApp::InitFileSystem()
 	spring::thread fsInitThread(FileSystemInitializer::InitializeThr, &ret);
 
 	#ifndef HEADLESS
-	const auto splashScreenFiles = FileSystemMisc::GetSplashScreenFiles();
-	if (!splashScreenFiles.empty()) {
-		ShowSplashScreen(splashScreenFiles[ guRNG.NextInt(splashScreenFiles.size()) ], SpringVersion::GetFull(), [&]() { return (FileSystemInitializer::Initialized()); });
+	if (configHandler->GetBool("ValidationDisableSplashScreen")) {
+		LOG_L(L_INFO, "[SpringApp::%s] ValidationDisableSplashScreen enabled, skipping splash-screen rendering during filesystem initialization", __func__);
+
+		while (!FileSystemInitializer::Initialized()) {
+			Watchdog::ClearTimer(WDT_MAIN);
+			SDL_PumpEvents();
+			SDL_Delay(16);
+		}
 	} else {
-		ShowSplashScreen("", SpringVersion::GetFull(), [&]() { return (FileSystemInitializer::Initialized()); });
+		const auto splashScreenFiles = FileSystemMisc::GetSplashScreenFiles();
+		if (!splashScreenFiles.empty()) {
+			ShowSplashScreen(splashScreenFiles[ guRNG.NextInt(splashScreenFiles.size()) ], SpringVersion::GetFull(), [&]() { return (FileSystemInitializer::Initialized()); });
+		} else {
+			ShowSplashScreen("", SpringVersion::GetFull(), [&]() { return (FileSystemInitializer::Initialized()); });
+		}
 	}
 	#endif
 

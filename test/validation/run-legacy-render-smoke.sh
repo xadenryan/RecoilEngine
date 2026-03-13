@@ -118,6 +118,7 @@ Fullscreen = 0
 WindowBorderless = 0
 XResolutionWindowed = 640
 YResolutionWindowed = 360
+ValidationDisableSplashScreen = 1
 LuaAutoEnableUserWidgets = 1
 ShowClock = 0
 ShowFPS = 0

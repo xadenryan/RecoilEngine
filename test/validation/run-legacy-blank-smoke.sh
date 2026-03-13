@@ -111,6 +111,7 @@ Fullscreen = 0
 WindowBorderless = 0
 XResolutionWindowed = 1280
 YResolutionWindowed = 800
+ValidationDisableSplashScreen = 1
 EOF
 
 "$SPRING_LEGACY" \

@@ -693,6 +693,12 @@ If any future edit compresses an entry so far that one of those four pieces beco
   Verification impact: a successful engine-backed playability capture now proves that the native macOS client can render, write, and post-process BAR validation frames under the playability fixture, and that the present path can match the normal screenshot hook; it still does not prove playability unless the resulting BAR frame also passes the repo-local HUD and composition checks.
   Exit criteria: keep the current engine-owned capture flow, but bring the BAR frame itself to a state where the analyzer plus manual review show a believable top bar, sane minimap/HUD placement, and a readable world view for the narrowed fixture.
 
+- Validation splash-screen bypass:
+  the validation-only `ValidationDisableSplashScreen` config now lets the legacy-client smoke harness skip the normal splash-screen swap loop during `SpringApp::InitFileSystem()`, and the macOS legacy validation scripts stage that flag in their isolated `springsettings.cfg`.
+  Why: native macOS Apple Silicon automation can hang inside the splash `SwapBuffers()` path before game load, while ordinary interactive users still need the existing splash-screen behavior unchanged by default.
+  Verification impact: a successful legacy smoke with this flag proves the client can finish filesystem initialization and continue into the actual smoke fixture without relying on splash-screen presents; it does not change normal startup behavior for non-validation runs.
+  Exit criteria: keep this bypass validation-only unless the underlying Cocoa/SDL splash present hang is fixed strongly enough that the smoke harness can return to the default splash path without reintroducing startup hangs.
+
 - Validation render scope:
   `ValidationRenderCapture` currently suppresses screen-space UI, cursor, and screen-post passes during automated render comparison.
   Why: the current Apple Silicon/macOS graphical validation effort is still stabilizing repeatable world-scene captures first, and these screen-space surfaces remain more sensitive to session timing and host interaction than the world draw.

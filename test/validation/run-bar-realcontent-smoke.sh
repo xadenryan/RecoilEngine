@@ -110,6 +110,33 @@ cleanup() {
 	fi
 }
 
+normalize_archive_key() {
+	printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/_/g; s/^_+//; s/_+$//'
+}
+
+find_cached_map_archive() {
+	target_key=$(normalize_archive_key "$1")
+
+	for path in "$CACHE_DIR"/maps/*; do
+		[ -f "$path" ] || continue
+
+		case "$path" in
+			*.sd7|*.sdz) ;;
+			*) continue ;;
+		esac
+
+		archive_name=$(basename "$path")
+		archive_key=$(normalize_archive_key "${archive_name%.*}")
+
+		if [ "$archive_key" = "$target_key" ]; then
+			printf '%s\n' "$path"
+			return 0
+		fi
+	done
+
+	return 1
+}
+
 print_bar_ui_diagnostics() {
 	"$SCRIPT_DIR/report-bar-ui-diagnostics.sh" \
 		"$ISOLATION_DIR/infolog.txt" \
@@ -142,6 +169,7 @@ select_first_present_capture_frame() {
 trap cleanup EXIT INT TERM
 
 mkdir -p "$CACHE_DIR"
+CACHE_DIR=$(CDPATH= cd -- "$CACHE_DIR" && pwd)
 
 : "${PRD_RAPID_USE_STREAMER:=false}"
 : "${PRD_RAPID_REPO_MASTER:=https://repos-cdn.beyondallreason.dev/repos.gz}"
@@ -157,9 +185,15 @@ export PRD_HTTP_SEARCH_URL
 
 mkdir -p \
 	"$ISOLATION_DIR/base" \
-	"$ISOLATION_DIR/demos"
+	"$ISOLATION_DIR/demos" \
+	"$ISOLATION_DIR/maps"
 
-ln -s "$CACHE_DIR/maps"     "$ISOLATION_DIR/maps"
+MAP_ARCHIVE=$(find_cached_map_archive "$MAP_SCRIPT_NAME") || {
+	echo "BAR real-content smoke failed: cached map archive for \"$MAP_SCRIPT_NAME\" was not found in $CACHE_DIR/maps." >&2
+	exit 1
+}
+
+ln -s "$MAP_ARCHIVE"        "$ISOLATION_DIR/maps/$(basename "$MAP_ARCHIVE")"
 ln -s "$CACHE_DIR/packages" "$ISOLATION_DIR/packages"
 ln -s "$CACHE_DIR/pool"     "$ISOLATION_DIR/pool"
 ln -s "$CACHE_DIR/rapid"    "$ISOLATION_DIR/rapid"
@@ -213,6 +247,7 @@ Fullscreen = 0
 WindowBorderless = 0
 XResolutionWindowed = 1280
 YResolutionWindowed = 800
+ValidationDisableSplashScreen = 1
 LuaAutoEnableUserWidgets = 1
 ShowClock = 0
 ShowFPS = 0
