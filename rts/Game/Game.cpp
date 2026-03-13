@@ -1375,6 +1375,7 @@ bool CGame::UpdateUnsynced(const spring_time currentTime)
 
 	// set camera
 	camHandler->UpdateController(playerHandler.Player(gu->myPlayerNum), gu->fpsMode);
+	ApplyValidationRenderCaptureCamera();
 
 	lineDrawer.UpdateLineStipple();
 
@@ -1453,7 +1454,6 @@ bool CGame::Draw() {
 		return false;
 
 	PrepareValidationRenderCapture();
-	ApplyValidationRenderCaptureCamera();
 	RmlGui::Update();
 	const spring_time currentTimePreDraw = spring_gettime();
 
@@ -1626,10 +1626,27 @@ void CGame::ApplyValidationRenderCaptureCamera()
 	if (!validationRenderCapture || validationRenderCaptured)
 		return;
 
+	if (!validationRenderCapturePlayerStartCamera && !validationRenderCaptureCenterCamera)
+		return;
+
 	// BAR's overview camera ignores SetPos/SetDir, so validation captures must
 	// switch to a controllable mode before forcing a deterministic camera pose.
 	if (camHandler->GetCurrentControllerNum() == CCameraHandler::CAMERA_MODE_OVERVIEW)
 		camHandler->SetCameraMode(CCameraHandler::CAMERA_MODE_FREE);
+
+	auto applyCameraPose = [this](const float3& cameraPos, const float3& captureDir) {
+		CCameraController& controller = camHandler->GetCurrentController();
+		const float3 captureRot = CCamera::GetRotFromDir(captureDir);
+
+		// Keep the controller roughly in sync for subsequent validation frames, but
+		// apply the pose directly to the live camera before world/UI prep.
+		controller.SetRot(captureRot);
+		controller.SetPos(cameraPos);
+
+		camera->SetPos(cameraPos);
+		camera->SetDir(captureDir);
+		camera->Update();
+	};
 
 	if (validationRenderCapturePlayerStartCamera) {
 		const CTeam* localTeam = teamHandler.Team(gu->myTeam);
@@ -1642,11 +1659,7 @@ void CGame::ApplyValidationRenderCaptureCamera()
 			const float3 focusPos = float3(clampedX, groundY, clampedZ);
 			const float3 cameraPos = float3(clampedX, groundY + validationRenderCaptureCameraHeight, clampedZ + validationRenderCaptureCameraBackOffset);
 			const float3 captureDir = (focusPos - cameraPos).SafeNormalize();
-			float4 targetPos = {cameraPos.x, cameraPos.y, cameraPos.z, 0.0f};
-
-			camHandler->GetCurrentController().SetPos(targetPos);
-			camHandler->GetCurrentController().SetDir(captureDir);
-			camHandler->CameraTransition(targetPos.w);
+			applyCameraPose(cameraPos, captureDir);
 		}
 
 		return;
@@ -1659,11 +1672,7 @@ void CGame::ApplyValidationRenderCaptureCamera()
 		const float3 focusPos = float3(centerX, centerY, centerZ);
 		const float3 cameraPos = float3(centerX, centerY + validationRenderCaptureCameraHeight, centerZ + validationRenderCaptureCameraBackOffset);
 		const float3 captureDir = (focusPos - cameraPos).SafeNormalize();
-		float4 targetPos = {cameraPos.x, cameraPos.y, cameraPos.z, 0.0f};
-
-		camHandler->GetCurrentController().SetPos(targetPos);
-		camHandler->GetCurrentController().SetDir(captureDir);
-		camHandler->CameraTransition(targetPos.w);
+		applyCameraPose(cameraPos, captureDir);
 	}
 }
 
@@ -1679,8 +1688,6 @@ void CGame::PrepareValidationRenderCapture()
 		showSpeed = false;
 		guihandler->SetDrawSelectionInfo(false);
 	}
-
-	ApplyValidationRenderCaptureCamera();
 
 	validationRenderCapturePrepared = true;
 }

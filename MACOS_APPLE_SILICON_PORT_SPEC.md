@@ -1,5 +1,7 @@
 # macOS Apple Silicon arm64 Port Spec
 
+The overall goal is to make RecoilEngine build and run on this Apple Silicon Mac in a way that is additive and maintainable: preserve the existing Linux/Windows/x86_64 paths, keep the shared-code surface as small as possible, and verify with built-in smoke tests and render comparisons that the game actually loads and is playable here rather than just compiling.
+
 This document is the canonical spec for getting RecoilEngine building, validating, and comparing on native macOS Apple Silicon `arm64`.
 
 It is meant to be thorough enough that another developer can pick up the work without relying on local terminal history.
@@ -720,6 +722,7 @@ If any future edit compresses an entry so far that one of those four pieces beco
 - Validation capture camera path:
   the automated render-capture path currently relies on explicit camera steering through `ValidationRenderCaptureCenterCamera`, `ValidationRenderCapturePlayerStartCamera`, `ValidationRenderCaptureCameraHeight`, and `ValidationRenderCaptureCameraBackOffset`, and the BAR real-content fixture uses the center-camera branch rather than BAR's own startup camera state.
   Why: BAR startup camera behavior and local player start positions are not stable enough for a repeatable regression frame on this machine, so the validation hook now forces a deterministic center-map capture path with documented offsets.
+  Timing note: camera steering now applies during `UpdateUnsynced()` immediately after `camHandler->UpdateController(...)` and before the live camera, world drawer, and uniform prep update for the capture frame; the old late-`Draw()` hook was too late to affect the rendered frame.
   Verification impact: successful BAR render validation currently proves the documented center-camera scene matches the baseline within tolerance, not that arbitrary startup-camera scenes or player-start-camera captures are already stable on this macOS path.
   Exit criteria: keep the explicit camera steering until BAR validation no longer depends on it or until a broader replay or scenario-based capture harness can verify camera parity without relying on a forced center-map view.
 
