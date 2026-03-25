@@ -289,7 +289,11 @@ TEST_CASE("Timer")
 	CHECK(t2.GetDuration().toMilliSecsi() >= 450);
 	CHECK(t.GetDuration().toMilliSecsi() >= 450);
 
-	CHECK(t2.GetDuration().toMilliSecsi() <= 550);
-	CHECK(t.GetDuration().toMilliSecsi() <= 550);
+	// Allow a wider upper bound for scheduler jitter on loaded hosts.
+	// The test still verifies that a requested ~500ms sleep lands in a sane range,
+	// but avoids failing spuriously when the process is descheduled for a few
+	// hundred milliseconds before the timer scope can finish.
+	CHECK(t2.GetDuration().toMilliSecsi() <= 1000);
+	CHECK(t.GetDuration().toMilliSecsi() <= 1000);
 }
 

@@ -193,6 +193,7 @@ class LuaUtils {
 		static void PushAttackerDef(lua_State* L, const CUnit& attacker);
 		static void PushAttackerDef(lua_State* L, const CUnit* const attacker);
 		static void PushAttackerInfo(lua_State* L, const CUnit* const attacker);
+#endif
 
 		template<typename ...Args>
 		static void SolLuaError(const char* format, Args&& ...args)
@@ -549,5 +550,3 @@ const inline FeatureDef* LuaUtils::SolIdToObject(int id, const char* func)
 
 	return obj;
 }
-
-#endif // LUA_UTILS_H

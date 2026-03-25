@@ -395,6 +395,10 @@ endif()
 
 	set(test_flags "-DUNITSYNC")
 	add_spring_test(${test_name} "${test_src}" "${test_libs}" "${test_flags}")
+	set_tests_properties(test${test_name} PROPERTIES
+		WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+		ENVIRONMENT "SPRING_DATADIR=${CMAKE_BINARY_DIR}"
+	)
 	target_include_directories(test_${test_name} PRIVATE ${ENGINE_SOURCE_DIR}/lib/)
 	if (RECOIL_BUILD_BASECONTENT)
 		add_dependencies(test_${test_name} springcontent.sdz)
@@ -415,6 +419,8 @@ endif()
 		)
 	if (WIN32)
 		list(APPEND test_src "${ENGINE_SOURCE_DIR}/System/Platform/Win/CpuTopology.cpp")
+	elseif (APPLE)
+		list(APPEND test_src "${ENGINE_SOURCE_DIR}/System/Platform/Mac/CpuTopology.cpp")
 	else (WIN32)
 		list(APPEND test_src "${ENGINE_SOURCE_DIR}/System/Platform/Linux/CpuTopology.cpp")
 	endif (WIN32)
@@ -469,7 +475,7 @@ endif()
 			${test_Common_sources}
 		)
 	set(test_libs
-			""
+			streflop
 		)
 	set(test_flags "-DNOT_USING_CREG -DBUILDING_AI")
 	add_spring_test(${test_name} "${test_src}" "${test_libs}" "${test_flags}")

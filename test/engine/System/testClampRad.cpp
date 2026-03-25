@@ -1,6 +1,7 @@
 /* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
 
 #include <cmath>
+#include <cstdint>
 #include <numeric>
 #include "System/SpringMath.h"
 #include "System/Misc/SpringTime.h"
@@ -43,10 +44,10 @@ TEST_CASE("ClampRad")
 	CHECK_FALSE(std::signbit(ClampRad(0.0f)));
 
 	// Test TAANG2RAD conversion to short for [0, 2pi)
-	CHECK(static_cast<short>(ClampRad(0.0f) * RAD2TAANG) == short(0));
-	CHECK(static_cast<short>(ClampRad(+std::nextafterf(math::TWOPI, -std::numeric_limits<float>::infinity())) * RAD2TAANG) == short(-1));
-	CHECK(static_cast<short>(ClampRad(+std::nextafterf(       0.0f, +std::numeric_limits<float>::infinity())) * RAD2TAANG) == short( 0));
-	CHECK(static_cast<short>(ClampRad(+std::nextafterf(TAANG2RAD  , +std::numeric_limits<float>::infinity())) * RAD2TAANG) == short(+1));
+	CHECK(static_cast<int>(static_cast<std::int16_t>(ClampRad(0.0f) * RAD2TAANG)) == 0);
+	CHECK(static_cast<std::uint16_t>(ClampRad(+std::nextafterf(math::TWOPI, -std::numeric_limits<float>::infinity())) * RAD2TAANG) == std::numeric_limits<std::uint16_t>::max());
+	CHECK(static_cast<int>(static_cast<std::int16_t>(ClampRad(+std::nextafterf(       0.0f, +std::numeric_limits<float>::infinity())) * RAD2TAANG)) == 0);
+	CHECK(static_cast<int>(static_cast<std::int16_t>(ClampRad(+std::nextafterf(TAANG2RAD  , +std::numeric_limits<float>::infinity())) * RAD2TAANG)) == 1);
 }
 
 TEST_CASE("ClampRadPi")
@@ -76,8 +77,8 @@ TEST_CASE("ClampRadPi")
 	CHECK_FALSE(std::signbit(ClampRadPi(0.0f)));
 
 	// Test TAANG2RAD conversion to short for [-pi, pi)
-	CHECK(static_cast<short>(ClampRadPi(-(math::PI)) * RAD2TAANG) == short(-32768));
-	CHECK(static_cast<short>(ClampRadPi(+std::nextafterf(math::PI, -std::numeric_limits<float>::infinity())) * RAD2TAANG) == short(32767));
-	CHECK(static_cast<short>(ClampRadPi((math::PI)) * RAD2TAANG) == short(-32768));
+	CHECK(static_cast<int>(static_cast<std::int16_t>(ClampRadPi(-(math::PI)) * RAD2TAANG)) == -32768);
+	CHECK(static_cast<int>(static_cast<std::int16_t>(ClampRadPi(+std::nextafterf(math::PI, -std::numeric_limits<float>::infinity())) * RAD2TAANG)) == 32767);
+	CHECK(static_cast<int>(static_cast<std::int16_t>(ClampRadPi((math::PI)) * RAD2TAANG)) == -32768);
 }
 

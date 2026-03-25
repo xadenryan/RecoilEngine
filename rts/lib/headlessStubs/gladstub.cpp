@@ -526,6 +526,9 @@ decltype(glad_glClearBufferuiv) glad_glClearBufferuiv = nullptr;
 decltype(glad_glClearBufferiv) glad_glClearBufferiv = nullptr;
 decltype(glad_glClearBufferfv) glad_glClearBufferfv = nullptr;
 decltype(glad_glGetTextureSubImage) glad_glGetTextureSubImage = nullptr;
+decltype(glad_glGetUniformBlockIndex) glad_glGetUniformBlockIndex = nullptr;
+decltype(glad_glUniformBlockBinding) glad_glUniformBlockBinding = nullptr;
+int GLAD_GL_ARB_base_instance = 0;
 
 namespace Impl {
     template<typename R, typename... Args>

@@ -458,8 +458,15 @@ endif()
 ### streflop
 option(ENABLE_STREFLOP "build Spring with streflop support (REQUIRED FOR MULTIPLAYER)" TRUE)
 
+set(RECOIL_BUILD_STREFLOP "${ENABLE_STREFLOP}" CACHE INTERNAL "Whether streflop support is enabled")
+
 if (ENABLE_STREFLOP)
 	set(STREFLOP_AUTO ON CACHE BOOL "Enable STREFLOP autodetection" FORCE)
+	if (IS_ARM64_BUILD)
+		add_definitions(-DSTREFLOP_NEON)
+	else()
+		add_definitions(-DSTREFLOP_SSE)
+	endif()
 else ()
 	add_definitions(-DNOT_USING_STREFLOP)
 endif ()
