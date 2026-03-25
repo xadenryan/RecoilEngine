@@ -72,6 +72,71 @@ if (WIN32)
 endif()
 
 
+# to change assimp for springs need, see fix_assimp.sh
+# sadly still manual changes are needed!
+
+set(DISABLED_ASSIMP_FORMATS "")
+foreach(var AMF AC ASE ASSBIN ASSXML B3D BVH DXF CSM HMP IRRMESH IRR LWS MD2 MD3 MD5 MDC MDL MMD NFF NDO OFF OGRE OPENGEX PLY MS3D COB IFC XGL FBX Q3D Q3BSP RAW SIB SMD STL TERRAGEN 3D X X3D GLTF 3MF)
+	list(APPEND DISABLED_ASSIMP_FORMATS "ASSIMP_BUILD_${var}_IMPORTER")
+endforeach()
+set(ENABLED_ASSIMP_FORMATS "")
+foreach(var 3DS COLLADA LWO OBJ BLEND)
+	list(APPEND ENABLED_ASSIMP_FORMATS "ASSIMP_BUILD_${var}_IMPORTER")
+endforeach()
+
+foreach(var
+		${DISABLED_ASSIMP_FORMATS}
+		BUILD_SHARED_LIBS
+		ASSIMP_BUILD_ASSIMP_TOOLS
+		ASSIMP_BUILD_TESTS
+		ASSIMP_NO_EXPORT
+		ASSIMP_OPT_BUILD_PACKAGES
+		ASSIMP_BUILD_ASSIMP_TOOLS
+		ASSIMP_BUILD_NONFREE_C4D_IMPORTER
+		ASSIMP_DOUBLE_PRECISION
+	)
+	set("${var}" OFF CACHE STRING "forced by Recoil build env" FORCE)
+endforeach()
+
+foreach(var
+		${ENABLED_ASSIMP_FORMATS}
+	)
+	set("${var}" ON CACHE STRING "forced by Recoil build env" FORCE)
+endforeach()
+
+foreach(var ASSIMP_BUILD_STATIC_LIB ASSIMP_NO_EXPORT)
+	message(STATUS "Forcing assimp option ${var} to on")
+	set("${var}" ON CACHE STRING "forced by Recoil build env" FORCE)
+endforeach()
+
+ADD_SUBDIRECTORY(assimp)
+target_compile_definitions(assimp PRIVATE -DASSIMP_BUILD_NO_OWN_ZLIB)
+
+# simdjson, a fastgltf dependency (manually added to submodules to work around the build system limitations)
+set(SIMDJSON_AVX512_ALLOWED OFF CACHE BOOL "forced by Recoil build env" FORCE)
+set(SIMDJSON_BASH OFF CACHE BOOL "forced by Recoil build env" FORCE)
+
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64|armv8")
+	# ARM64: enable native NEON implementation (well-tested in simdjson)
+	set(SIMDJSON_IMPLEMENTATION "arm64" CACHE STRING "forced by Recoil build env" FORCE)
+else()
+	# x86: use fallback only (original behavior)
+	set(SIMDJSON_IMPLEMENTATION "fallback" CACHE STRING "forced by Recoil build env" FORCE)
+endif()
+
+set(SIMDJSON_ENABLE_THREADS     OFF CACHE BOOL "forced by Recoil build env" FORCE)
+set(SIMDJSON_EXCEPTIONS     ON CACHE BOOL "forced by Recoil build env" FORCE)
+ADD_SUBDIRECTORY(simdjson)
+
+# fastgltf
+set(FASTGLTF_COMPILE_AS_CPP20 ON CACHE BOOL "forced by Recoil build env" FORCE)
+set(FASTGLTF_USE_64BIT_FLOAT OFF CACHE BOOL "forced by Recoil build env" FORCE)
+set(FASTGLTF_USE_CUSTOM_SMALLVECTOR OFF CACHE BOOL "forced by Recoil build env" FORCE)
+ADD_SUBDIRECTORY(fastgltf)
+
+ADD_SUBDIRECTORY(squish)
+ADD_SUBDIRECTORY(rg-etc1)
+
 option(TRACY_ENABLE "Enable tracy profiling" OFF)
 
 # On demand profiling is *slightly* more expensive, but it allows to run the

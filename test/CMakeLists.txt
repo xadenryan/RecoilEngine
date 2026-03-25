@@ -182,10 +182,11 @@ endif()
 		)
 
 	set(test_libs
+			streflop
 			${WINMM_LIBRARY}
 		)
 
-	add_spring_test(${test_name} "${test_src}" "${test_libs}" "-DNOT_USING_CREG -DNOT_USING_STREFLOP -DBUILDING_AI")
+	add_spring_test(${test_name} "${test_src}" "${test_libs}" "-DNOT_USING_CREG -DBUILDING_AI")
 
 ################################################################################
 ### Matrix44f
@@ -203,10 +204,11 @@ endif()
 		)
 
 	set(test_libs
+			streflop
 			${WINMM_LIBRARY}
 		)
 
-	add_spring_test(${test_name} "${test_src}" "${test_libs}" "-DNOT_USING_CREG -DNOT_USING_STREFLOP -DBUILDING_AI")
+	add_spring_test(${test_name} "${test_src}" "${test_libs}" "-DNOT_USING_CREG -DBUILDING_AI")
 
 ################################################################################
 ### Matrix44fRotation
@@ -221,10 +223,11 @@ endif()
 		)
 
 	set(test_libs
+			streflop
 			${WINMM_LIBRARY}
 		)
 
-	add_spring_test(${test_name} "${test_src}" "${test_libs}" "-DNOT_USING_CREG -DNOT_USING_STREFLOP -DBUILDING_AI")
+	add_spring_test(${test_name} "${test_src}" "${test_libs}" "-DNOT_USING_CREG -DBUILDING_AI")
 
 ################################################################################
 ### Transform
@@ -240,10 +243,11 @@ endif()
 		)
 
 	set(test_libs
+			streflop
 			${WINMM_LIBRARY}
 		)
 
-	add_spring_test(${test_name} "${test_src}" "${test_libs}" "-DNOT_USING_CREG -DNOT_USING_STREFLOP -DBUILDING_AI")
+	add_spring_test(${test_name} "${test_src}" "${test_libs}" "-DNOT_USING_CREG -DBUILDING_AI")
 
 ################################################################################
 ### ShaderPreprocessorUtils
@@ -275,7 +279,7 @@ endif()
 			${WINMM_LIBRARY}
 		)
 
-	set(test_flags "-DNOT_USING_CREG -DNOT_USING_STREFLOP -DBUILDING_AI")
+	set(test_flags "-DNOT_USING_CREG -DBUILDING_AI")
 
 	add_spring_test(${test_name} "${test_src}" "${test_libs}" "${test_flags}")
 
@@ -440,7 +444,7 @@ endif()
 			${WS2_32_LIBRARY}
 		)
 
-	set(test_flags "-DNOT_USING_CREG -DNOT_USING_STREFLOP -DBUILDING_AI")
+	set(test_flags "-DNOT_USING_CREG -DBUILDING_AI")
 	add_spring_test(${test_name} "${test_src}" "${test_libs}" "${test_flags}")
 
 ################################################################################
@@ -451,9 +455,9 @@ endif()
 			${test_Common_sources}
 		)
 	set(test_libs
-			""
+			streflop
 		)
-	set(test_flags "-DNOT_USING_CREG -DNOT_USING_STREFLOP -DBUILDING_AI")
+	set(test_flags "-DNOT_USING_CREG -DBUILDING_AI")
 	add_spring_test(${test_name} "${test_src}" "${test_libs}" "${test_flags}")
 
 ################################################################################
@@ -467,27 +471,25 @@ endif()
 	set(test_libs
 			""
 		)
-	set(test_flags "-DNOT_USING_CREG -DNOT_USING_STREFLOP -DBUILDING_AI")
+	set(test_flags "-DNOT_USING_CREG -DBUILDING_AI")
 	add_spring_test(${test_name} "${test_src}" "${test_libs}" "${test_flags}")
 
-if (RECOIL_BUILD_STREFLOP)
-	################################################################################
-	### SQRT
-		set(test_name SQRT)
-		set(test_src
-				"${CMAKE_CURRENT_SOURCE_DIR}/engine/System/testSQRT.cpp"
-				"${ENGINE_SOURCE_DIR}/System/Misc/SpringTime.cpp"
-				"${ENGINE_SOURCE_DIR}/System/TimeProfiler.cpp"
-				${sources_engine_System_Threading}
-				${test_Common_sources}
-			)
-		set(test_libs
-				streflop
-				${WINMM_LIBRARY}
-			)
-		set(test_flags "-DNOT_USING_CREG -DSTREFLOP_SSE -DBUILDING_AI")
-		add_spring_test(${test_name} "${test_src}" "${test_libs}" "${test_flags}")
-endif()
+################################################################################
+### SQRT
+	set(test_name SQRT)
+	set(test_src
+			"${CMAKE_CURRENT_SOURCE_DIR}/engine/System/testSQRT.cpp"
+			"${ENGINE_SOURCE_DIR}/System/Misc/SpringTime.cpp"
+			"${ENGINE_SOURCE_DIR}/System/TimeProfiler.cpp"
+			${sources_engine_System_Threading}
+			${test_Common_sources}
+		)
+	set(test_libs
+			streflop
+			${WINMM_LIBRARY}
+		)
+	set(test_flags "-DNOT_USING_CREG -DBUILDING_AI")
+	add_spring_test(${test_name} "${test_src}" "${test_libs}" "${test_flags}")
 
 ################################################################################
 ### ClampRad
@@ -500,9 +502,10 @@ endif()
 			${test_Common_sources}
 		)
 	set(test_libs
+			streflop
 			${WINMM_LIBRARY}
 		)
-	set(test_flags "-DNOT_USING_CREG -DNOT_USING_STREFLOP -DBUILDING_AI")
+	set(test_flags "-DNOT_USING_CREG -DBUILDING_AI")
 	add_spring_test(${test_name} "${test_src}" "${test_libs}" "${test_flags}")
 
 ################################################################################
@@ -536,8 +539,7 @@ endif()
 			headlessStubs
 			smmalloc
 		)
-	set(test_flags "-DNOT_USING_STREFLOP")
-	add_spring_test(${test_name} "${test_src}" "${test_libs}" "${test_flags}")
+	add_spring_test(${test_name} "${test_src}" "${test_libs}" "")
 	target_include_directories(test_${test_name} PRIVATE ${ENGINE_SOURCE_DIR}/lib/)
 	target_include_directories(test_${test_name} PRIVATE ${ENGINE_SOURCE_DIR}/lib/lua/include)
 
@@ -551,7 +553,7 @@ endif()
 	set(test_libs
 		smmalloc
 	)
-	add_spring_test(${test_name} "${test_src}" "${test_libs}" "${test_flags}")
+	add_spring_test(${test_name} "${test_src}" "${test_libs}" "")
 	target_include_directories(test_${test_name} PRIVATE ${ENGINE_SOURCE_DIR}/lib/)
 
 ################################################################################

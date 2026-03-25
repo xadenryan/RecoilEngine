@@ -12,6 +12,8 @@
 #include <algorithm>
 #include <cstring>
 
+#include "System/simd_compat.h"
+
 CR_BIND(CMatrix44f, )
 
 CR_REG_METADATA(CMatrix44f, CR_MEMBER(m))

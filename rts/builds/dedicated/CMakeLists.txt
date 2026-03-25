@@ -1,9 +1,6 @@
 add_definitions    (-DDEDICATED ${PIC_FLAG} -DNOT_USING_CREG)
 add_definitions    (-DHEADLESS -DNO_SOUND)
-if (NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64|i[3-6]86)$")
-	add_definitions(-DDEDICATED_NOSSE)
-endif()
-remove_definitions (-DSTREFLOP_SSE -DSTREFLOP_NEON -DAVI_CAPTURING)
+remove_definitions (-DAVI_CAPTURING)
 remove_definitions (-DTRACE_SYNC -DSYNCDEBUG)
 remove_definitions (-DTHREADPOOL)
 

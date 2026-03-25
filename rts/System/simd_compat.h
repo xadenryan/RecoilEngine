@@ -1,14 +1,13 @@
-/* This file is part of the Spring engine (GPL v2 or later), see LICENSE.html */
+#ifndef _SIMD_COMPAT_H
+#define _SIMD_COMPAT_H
 
-#pragma once
-
-#include "System/MainDefines.h"
-
-#if (__is_x86_arch__ == 1)
-	#include <xmmintrin.h>
-	#include <emmintrin.h>
-	#include <immintrin.h>
-	#define SPRING_HAVE_SSE_INTRINSICS 1
+#ifdef SSE2NEON
+    #include "lib/sse2neon/sse2neon.h"
 #else
-	#define SPRING_HAVE_SSE_INTRINSICS 0
+    #include <x86intrin.h>
+    #include <immintrin.h>
+    #include <xmmintrin.h>
+    #include <emmintrin.h>
 #endif
+
+#endif // _SIMD_COMPAT_H
